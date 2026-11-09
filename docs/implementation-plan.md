@@ -15,6 +15,7 @@ Establish the requested repository layout while keeping the current prototype ru
 - Add package-level architecture notes under the requested core and API feature areas; leave implementation extraction for later phases.
 - Update `CHECKLIST.md` with commands actually run and unavailable acceptance coverage.
 - Update `.gitignore` to exclude the generated repository inventory artifact from the phase commit.
+- Make `scripts/demo.sh` create a dedicated sleep handler job with a high concurrency limit, throttle submissions to five clients, and assert exactly 1,000 rows all succeeded on the first attempt.
 - Add the Maven wrapper and pin its Maven distribution.
 
 ## Verification

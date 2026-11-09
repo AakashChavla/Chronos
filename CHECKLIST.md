@@ -39,6 +39,6 @@
 - `docker compose up -d --build` — passed; PostgreSQL, API/scheduler, three workers, Prometheus, Grafana, and frontend are running.
 - Runtime probes — `/actuator/health` returned `UP`; `/api/jobs` returned 10 jobs; `/api/workers` returned 3 workers; frontend returned HTTP 200.
 - `scripts/demo.sh` — passed against the rebuilt API: exactly 1,000 runs succeeded at attempt 0.
-- `npm ci` — passed; 72 packages audited, 0 vulnerabilities. `npm run lint` — failed because no `lint` script exists; `npm run test:ci` and `npm run build` were not reached by the prescribed sequence. The prior Phase 1 build command passed separately.
+- `npm ci` — passed; 72 packages audited, 0 vulnerabilities. `npm run lint` — failed because no `lint` script exists; `npm run test:ci` — failed because no `test:ci` script exists. `npm run build` — passed (with upstream React Query `use client` bundler warnings).
 - API paths and response shapes were not changed in this phase.
 - Remaining unverified acceptance criteria include the 1,000-run concurrent submission through 3 worker containers, crash recovery during an active execution, flaky exponential retry/dead-letter progression, workflow dependency failure behavior, cycle rejection, and linked replay. Existing integration coverage is narrower than these criteria.

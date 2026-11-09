@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    environment: {POSTGRES_DB: chronos, POSTGRES_USER: chronos, POSTGRES_PASSWORD: chronos}
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U chronos"], interval: 5s, timeout: 3s, retries: 10}
+  app:
+    build: .
+    environment: {DB_URL: jdbc:postgresql://postgres:5432/chronos, DB_USER: chronos, DB_PASSWORD: chronos, WORKER_ID: scheduler, WORKER_ENABLED: 'false', SCHEDULER_ENABLED: 'true'}
+    depends_on: {postgres: {condition: service_healthy}}
+    ports: ["18080:8080"]
+  worker1: {build: ., environment: {DB_URL: jdbc:postgresql://postgres:5432/chronos, DB_USER: chronos, DB_PASSWORD: chronos, WORKER_ID: worker-1, WORKER_ENABLED: 'true', SCHEDULER_ENABLED: 'false', SPRING_MAIN_WEB_APPLICATION_TYPE: none}, depends_on: {postgres: {condition: service_healthy}}}
+  worker2: {build: ., environment: {DB_URL: jdbc:postgresql://postgres:5432/chronos, DB_USER: chronos, DB_PASSWORD: chronos, WORKER_ID: worker-2, WORKER_ENABLED: 'true', SCHEDULER_ENABLED: 'false', SPRING_MAIN_WEB_APPLICATION_TYPE: none}, depends_on: {postgres: {condition: service_healthy}}}
+  worker3: {build: ., environment: {DB_URL: jdbc:postgresql://postgres:5432/chronos, DB_USER: chronos, DB_PASSWORD: chronos, WORKER_ID: worker-3, WORKER_ENABLED: 'true', SCHEDULER_ENABLED: 'false', SPRING_MAIN_WEB_APPLICATION_TYPE: none}, depends_on: {postgres: {condition: service_healthy}}}
+  frontend: {build: ./frontend, ports: ["15173:80"], depends_on: [app]}
+  prometheus: {image: prom/prometheus, volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml"], ports: ["19090:9090"]}
+  grafana: {image: grafana/grafana-oss, ports: ["13000:3000"], volumes: ["./observability/grafana:/etc/grafana/provisioning"]}

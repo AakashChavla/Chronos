@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: '${DB_URL:jdbc:postgresql://localhost:5432/chronos}'
+    username: '${DB_USER:chronos}'
+    password: '${DB_PASSWORD:chronos}'
+  flyway:
+    enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+chronos:
+  worker-id: '${WORKER_ID:${HOSTNAME:local}}'
+  worker-enabled: '${WORKER_ENABLED:false}'
+  scheduler-enabled: '${SCHEDULER_ENABLED:true}'

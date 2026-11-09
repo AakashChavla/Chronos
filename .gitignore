@@ -1,0 +1,8 @@
+.tools/
+**/target/
+**/node_modules/
+**/dist/
+.idea/
+.vscode/
+*.log
+repomix-output.xml

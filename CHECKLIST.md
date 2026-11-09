@@ -42,3 +42,16 @@
 - `npm ci` — passed; 72 packages audited, 0 vulnerabilities. `npm run lint` — failed because no `lint` script exists; `npm run test:ci` — failed because no `test:ci` script exists. `npm run build` — passed (with upstream React Query `use client` bundler warnings).
 - API paths and response shapes were not changed in this phase.
 - Remaining unverified acceptance criteria include the 1,000-run concurrent submission through 3 worker containers, crash recovery during an active execution, flaky exponential retry/dead-letter progression, workflow dependency failure behavior, cycle rejection, and linked replay. Existing integration coverage is narrower than these criteria.
+
+## Production hardening plan: Phase 1 in progress (2026-11-09)
+
+- The earlier setup, CRUD, and transition commits did **not** complete the attached document's first two phase prompts. The full Phase 1 and Phase 2 acceptance criteria were not met. Work is now on `phase-1-foundation-hardening` and follows the document's order.
+- `./mvnw -B spotless:apply` — passed with AOSP-style Google Java Format.
+- `./mvnw -B verify` — passed; 14 tests, 0 failures/errors; SpotBugs + Find Security Bugs reported 0 findings in each module; Java 21 and dependency convergence checks passed.
+- `./mvnw -B dependency:analyze` — command completed, but reported unused/undeclared dependency warnings; Phase 1 A8 is not satisfied.
+- `bash scripts/check-status-write-boundary.sh` (Git Bash on Windows) — passed; job-run status SQL occurs in `JdbcRunTransitionRepository`, called through `RunTransitionService`.
+- `docker compose config --quiet` — passed. `docker compose up -d --build` built separate runnable API, scheduler, worker, and frontend images; the first start hit the prior `app` container's occupied API port. `docker compose up -d --remove-orphans` removed the replaced container and started the split services.
+- Runtime probes — API health `UP`, `/api/jobs` returned 11 jobs, `/api/workers` returned 3 workers, dashboard HTTP 200; worker has no published ports.
+- `scripts/demo.sh` — passed on the split deployment: exactly 1,000 runs succeeded at attempt 0.
+- The API paths, ports, and response shapes have not changed in this work slice.
+- Phase 1 remains incomplete: no test-only characterization baseline for all listed scenarios was committed before this partial refactor; the REST controller still mixes endpoints and SQL; duplicate/unknown-job problem handling, DAG/configuration tests, validated properties/profiles, and package-layer enforcement remain. Phase 1 A1/A3/A4/A7 have evidence for this slice; A2/A5/A6/A8 are not fully satisfied.

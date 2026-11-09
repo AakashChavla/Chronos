@@ -26,6 +26,7 @@
     <spotbugs.version>4.8.6.6</spotbugs.version>
     <pitest.version>1.17.0</pitest.version>
     <maven-failsafe.version>3.2.5</maven-failsafe.version>
+    <maven-enforcer.version>3.5.0</maven-enforcer.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
@@ -98,6 +99,7 @@
             <java>
               <googleJavaFormat>
                 <version>1.25.2</version>
+                <style>AOSP</style>
               </googleJavaFormat>
             </java>
           </configuration>
@@ -152,6 +154,52 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${maven-enforcer.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-java-and-dependency-convergence</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[21,22)</version>
+                </requireJavaVersion>
+                <dependencyConvergence />
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>${spotbugs.version}</version>
+        <executions>
+          <execution>
+            <id>spotbugs-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+        <dependencies>
+          <dependency>
+            <groupId>com.h3xstream.findsecbugs</groupId>
+            <artifactId>findsecbugs-plugin</artifactId>
+            <version>1.13.0</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <effort>Max</effort>
+          <threshold>High</threshold>
+        </configuration>
       </plugin>
     </plugins>
   </build>

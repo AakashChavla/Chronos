@@ -29,125 +29,134 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(name = "chronos.worker-enabled", havingValue = "true")
 public class WorkerService {
-  private static final Logger LOGGER = LoggerFactory.getLogger(WorkerService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(WorkerService.class);
 
-  private final JdbcTemplate jdbc;
-  private final RunTransitionService transitions;
-  private final String worker;
-  private final Map<String, JobHandler> handlers;
-  private final ScheduledExecutorService heartbeats = Executors.newSingleThreadScheduledExecutor();
+    private final JdbcTemplate jdbc;
+    private final RunTransitionService transitions;
+    private final String worker;
+    private final Map<String, JobHandler> handlers;
+    private final ScheduledExecutorService heartbeats =
+            Executors.newSingleThreadScheduledExecutor();
 
-  public WorkerService(
-      JdbcTemplate jdbc,
-      RunTransitionService transitions,
-      @Value("${chronos.worker-id}") String worker,
-      BuiltinHandlers builtins) {
-    this.jdbc = jdbc;
-    this.transitions = transitions;
-    this.worker = worker;
-    this.handlers = new HashMap<>();
-    builtins.all().forEach(h -> handlers.put(h.type(), h));
-  }
-
-  @Scheduled(fixedDelay = 1000)
-  public void poll() {
-    jdbc.update(
-        "insert into worker_node(id,heartbeat_at) values (?,now()) "
-            + "on conflict(id) do update set heartbeat_at=now()",
-        worker);
-    for (ClaimedRun run : transitions.claimBatch(worker)) {
-      Thread.startVirtualThread(() -> execute(run));
+    public WorkerService(
+            JdbcTemplate jdbc,
+            RunTransitionService transitions,
+            @Value("${chronos.worker-id}") String worker,
+            BuiltinHandlers builtins) {
+        this.jdbc = jdbc;
+        this.transitions = transitions;
+        this.worker = worker;
+        this.handlers = new HashMap<>();
+        builtins.all().forEach(h -> handlers.put(h.type(), h));
     }
-  }
 
-  private void execute(ClaimedRun run) {
-    AtomicBoolean leaseLost = new AtomicBoolean();
-    AtomicReference<Future<?>> taskReference = new AtomicReference<>();
-    ScheduledFuture<?> beat =
-        heartbeats.scheduleAtFixedRate(
-            () -> {
-              boolean renewed = transitions.heartbeat(run.id(), worker, run.leaseToken());
-              if (!renewed) {
-                leaseLost.set(true);
-                Future<?> task = taskReference.get();
-                if (task != null) {
-                  task.cancel(true);
-                }
-                LOGGER.warn(
-                    "Worker lease lost for runId={} jobId={} workerId={}",
-                    run.id(),
-                    run.jobDefinitionId(),
-                    worker);
-              }
-            },
-            5,
-            5,
-            TimeUnit.SECONDS);
-    try {
-      JobHandler handler = handlers.get(run.handlerType());
-      if (handler == null) {
-        throw new IllegalArgumentException("unknown handler: " + run.handlerType());
-      }
-      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-      try {
-        Future<?> task =
-            executor.submit(
-                () -> {
-                  try {
-                    handler.handle(
-                        new RunContext(
-                            run.id(),
-                            run.jobDefinitionId(),
-                            run.payloadJson(),
-                            run.idempotencyKey()));
-                  } catch (Exception error) {
-                    throw new CompletionException(error);
-                  }
-                });
-        taskReference.set(task);
-        if (leaseLost.get()) {
-          task.cancel(true);
+    @Scheduled(fixedDelay = 1000)
+    public void poll() {
+        jdbc.update(
+                "insert into worker_node(id,heartbeat_at) values (?,now()) "
+                        + "on conflict(id) do update set heartbeat_at=now()",
+                worker);
+        for (ClaimedRun run : transitions.claimBatch(worker)) {
+            Thread.startVirtualThread(() -> execute(run));
         }
-        task.get(run.timeoutSec(), TimeUnit.SECONDS);
-      } finally {
-        executor.shutdownNow();
-      }
-      if (leaseLost.get()) {
-        return;
-      }
-      if (!transitions.complete(run.id(), worker, run.leaseToken())) {
-        LOGGER.warn(
-            "Worker result discarded after lease loss for runId={} jobId={} workerId={}",
-            run.id(),
-            run.jobDefinitionId(),
-            worker);
-      }
-    } catch (Exception error) {
-      if (leaseLost.get()) {
-        return;
-      }
-      int nextAttempt = run.attempt() + 1;
-      double delay =
-          Math.min(300, Math.pow(2, nextAttempt)) + ThreadLocalRandom.current().nextDouble(0, 1);
-      String message =
-          Optional.ofNullable(error.getCause())
-              .map(Throwable::getMessage)
-              .orElse(error.getMessage());
-      if (!transitions.fail(
-          run.id(), worker, run.leaseToken(), run.attempt(), run.maxAttempts(), message, delay)) {
-        LOGGER.warn(
-            "Worker failure discarded after lease loss for runId={} jobId={} workerId={}",
-            run.id(),
-            run.jobDefinitionId(),
-            worker);
-      }
-    } finally {
-      beat.cancel(false);
     }
-  }
 
-  @Scheduled(fixedDelay = 5000)
-  public void reap() {
-    transitions.reapExpired();
-  }
+    private void execute(ClaimedRun run) {
+        AtomicBoolean leaseLost = new AtomicBoolean();
+        AtomicReference<Future<?>> taskReference = new AtomicReference<>();
+        ScheduledFuture<?> beat =
+                heartbeats.scheduleAtFixedRate(
+                        () -> {
+                            boolean renewed =
+                                    transitions.heartbeat(run.id(), worker, run.leaseToken());
+                            if (!renewed) {
+                                leaseLost.set(true);
+                                Future<?> task = taskReference.get();
+                                if (task != null) {
+                                    task.cancel(true);
+                                }
+                                LOGGER.warn(
+                                        "Worker lease lost for runId={} jobId={} workerId={}",
+                                        run.id(),
+                                        run.jobDefinitionId(),
+                                        worker);
+                            }
+                        },
+                        5,
+                        5,
+                        TimeUnit.SECONDS);
+        try {
+            JobHandler handler = handlers.get(run.handlerType());
+            if (handler == null) {
+                throw new IllegalArgumentException("unknown handler: " + run.handlerType());
+            }
+            ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+            try {
+                Future<?> task =
+                        executor.submit(
+                                () -> {
+                                    try {
+                                        handler.handle(
+                                                new RunContext(
+                                                        run.id(),
+                                                        run.jobDefinitionId(),
+                                                        run.payloadJson(),
+                                                        run.idempotencyKey()));
+                                    } catch (Exception error) {
+                                        throw new CompletionException(error);
+                                    }
+                                });
+                taskReference.set(task);
+                if (leaseLost.get()) {
+                    task.cancel(true);
+                }
+                task.get(run.timeoutSec(), TimeUnit.SECONDS);
+            } finally {
+                executor.shutdownNow();
+            }
+            if (leaseLost.get()) {
+                return;
+            }
+            if (!transitions.complete(run.id(), worker, run.leaseToken())) {
+                LOGGER.warn(
+                        "Worker result discarded after lease loss for runId={} jobId={} workerId={}",
+                        run.id(),
+                        run.jobDefinitionId(),
+                        worker);
+            }
+        } catch (Exception error) {
+            if (leaseLost.get()) {
+                return;
+            }
+            int nextAttempt = run.attempt() + 1;
+            double delay =
+                    Math.min(300, Math.pow(2, nextAttempt))
+                            + ThreadLocalRandom.current().nextDouble(0, 1);
+            String message =
+                    Optional.ofNullable(error.getCause())
+                            .map(Throwable::getMessage)
+                            .orElse(error.getMessage());
+            if (!transitions.fail(
+                    run.id(),
+                    worker,
+                    run.leaseToken(),
+                    run.attempt(),
+                    run.maxAttempts(),
+                    message,
+                    delay)) {
+                LOGGER.warn(
+                        "Worker failure discarded after lease loss for runId={} jobId={} workerId={}",
+                        run.id(),
+                        run.jobDefinitionId(),
+                        worker);
+            }
+        } finally {
+            beat.cancel(false);
+        }
+    }
+
+    @Scheduled(fixedDelay = 5000)
+    public void reap() {
+        transitions.reapExpired();
+    }
 }

@@ -32,5 +32,5 @@ The earlier repository setup, job CRUD, and run-transition commits do not comple
 
 ## Dependency changes
 
-- Planned: Maven Enforcer plugin and SpotBugs plugin with Find Security Bugs, because Phase 1 explicitly requires Java/dependency convergence and static security analysis. Select and pin plugin versions in the parent POM.
-- No runtime dependency is planned. Add test/architecture dependencies only if required by the specified tests, and list the reason before adding them.
+- Planned: Maven Enforcer plugin 3.5.0 and SpotBugs plugin 4.8.6.6 with Find Security Bugs 1.13.0, because Phase 1 explicitly requires Java/dependency convergence and static security analysis.
+- Planned test dependencies for the worker module: `spring-boot-starter-test` and Testcontainers JUnit/PostgreSQL, because the required characterization test must execute the real worker against Postgres. No runtime dependency is planned.

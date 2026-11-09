@@ -6,11 +6,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface JobRepository {
-  List<JobDefinition> findAll();
+    List<JobDefinition> findAll();
 
-  Optional<JobDefinition> findById(UUID id);
+    Optional<JobDefinition> findById(UUID id);
 
-  JobDefinition insert(JobDefinition job);
+    JobDefinition insert(JobDefinition job);
 
-  boolean update(JobDefinition job);
+    boolean update(JobDefinition job);
 }

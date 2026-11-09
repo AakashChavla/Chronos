@@ -18,65 +18,65 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/jobs")
 public final class JobController {
-  private final JobService jobs;
+    private final JobService jobs;
 
-  public JobController(JobService jobs) {
-    this.jobs = jobs;
-  }
-
-  @GetMapping
-  public List<JobResponse> list() {
-    return jobs.list().stream().map(JobController::toResponse).toList();
-  }
-
-  @PostMapping
-  @ResponseStatus(HttpStatus.CREATED)
-  public JobCreatedResponse create(@RequestBody JobRequest request) {
-    return new JobCreatedResponse(jobs.create(request.toCommand()).id());
-  }
-
-  @PutMapping("/{id}")
-  public void update(@PathVariable("id") UUID id, @RequestBody JobRequest request) {
-    jobs.update(id, request.toCommand());
-  }
-
-  private static JobResponse toResponse(JobDefinition job) {
-    return new JobResponse(
-        job.id(),
-        job.name(),
-        job.handlerType(),
-        new JsonPayload("jsonb", job.payloadJson(), false),
-        job.scheduleCron(),
-        job.timezone(),
-        job.scheduleNextAt(),
-        job.maxAttempts(),
-        job.timeoutSec(),
-        job.concurrencyLimit(),
-        job.enabled(),
-        job.createdAt());
-  }
-
-  public record JobRequest(
-      String name,
-      String handlerType,
-      String payloadJson,
-      String scheduleCron,
-      String timezone,
-      Integer maxAttempts,
-      Integer timeoutSec,
-      Integer concurrencyLimit,
-      Boolean enabled) {
-    CreateJobCommand toCommand() {
-      return new CreateJobCommand(
-          name,
-          handlerType,
-          payloadJson,
-          scheduleCron,
-          timezone,
-          maxAttempts,
-          timeoutSec,
-          concurrencyLimit,
-          enabled);
+    public JobController(JobService jobs) {
+        this.jobs = jobs;
     }
-  }
+
+    @GetMapping
+    public List<JobResponse> list() {
+        return jobs.list().stream().map(JobController::toResponse).toList();
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public JobCreatedResponse create(@RequestBody JobRequest request) {
+        return new JobCreatedResponse(jobs.create(request.toCommand()).id());
+    }
+
+    @PutMapping("/{id}")
+    public void update(@PathVariable("id") UUID id, @RequestBody JobRequest request) {
+        jobs.update(id, request.toCommand());
+    }
+
+    private static JobResponse toResponse(JobDefinition job) {
+        return new JobResponse(
+                job.id(),
+                job.name(),
+                job.handlerType(),
+                new JsonPayload("jsonb", job.payloadJson(), false),
+                job.scheduleCron(),
+                job.timezone(),
+                job.scheduleNextAt(),
+                job.maxAttempts(),
+                job.timeoutSec(),
+                job.concurrencyLimit(),
+                job.enabled(),
+                job.createdAt());
+    }
+
+    public record JobRequest(
+            String name,
+            String handlerType,
+            String payloadJson,
+            String scheduleCron,
+            String timezone,
+            Integer maxAttempts,
+            Integer timeoutSec,
+            Integer concurrencyLimit,
+            Boolean enabled) {
+        CreateJobCommand toCommand() {
+            return new CreateJobCommand(
+                    name,
+                    handlerType,
+                    payloadJson,
+                    scheduleCron,
+                    timezone,
+                    maxAttempts,
+                    timeoutSec,
+                    concurrencyLimit,
+                    enabled);
+        }
+    }
 }

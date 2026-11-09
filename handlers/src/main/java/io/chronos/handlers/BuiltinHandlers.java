@@ -13,55 +13,55 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class BuiltinHandlers {
-  private static final Logger LOGGER = LoggerFactory.getLogger(BuiltinHandlers.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(BuiltinHandlers.class);
 
-  public List<JobHandler> all() {
-    return List.of(new Sleep(), new Flaky(), new Email(), new Http());
-  }
-
-  static class Sleep implements JobHandler {
-    public String type() {
-      return "sleep-and-log";
+    public List<JobHandler> all() {
+        return List.of(new Sleep(), new Flaky(), new Email(), new Http());
     }
 
-    public void handle(RunContext c) throws Exception {
-      Thread.sleep(100);
-    }
-  }
+    static class Sleep implements JobHandler {
+        public String type() {
+            return "sleep-and-log";
+        }
 
-  static class Flaky implements JobHandler {
-    public String type() {
-      return "flaky";
-    }
-
-    public void handle(RunContext c) {
-      if (Math.random() < .5) throw new IllegalStateException("configured flaky failure");
-    }
-  }
-
-  static class Email implements JobHandler {
-    public String type() {
-      return "send-email-mock";
+        public void handle(RunContext c) throws Exception {
+            Thread.sleep(100);
+        }
     }
 
-    public void handle(RunContext c) {
-      LOGGER.info("Mock email handler completed for run {} and job {}", c.runId(), c.jobId());
-    }
-  }
+    static class Flaky implements JobHandler {
+        public String type() {
+            return "flaky";
+        }
 
-  static class Http implements JobHandler {
-    public String type() {
-      return "http-call";
+        public void handle(RunContext c) {
+            if (Math.random() < .5) throw new IllegalStateException("configured flaky failure");
+        }
     }
 
-    public void handle(RunContext c) throws Exception {
-      HttpClient.newHttpClient()
-          .send(
-              HttpRequest.newBuilder(URI.create("https://example.com"))
-                  .timeout(Duration.ofSeconds(10))
-                  .GET()
-                  .build(),
-              HttpResponse.BodyHandlers.discarding());
+    static class Email implements JobHandler {
+        public String type() {
+            return "send-email-mock";
+        }
+
+        public void handle(RunContext c) {
+            LOGGER.info("Mock email handler completed for run {} and job {}", c.runId(), c.jobId());
+        }
     }
-  }
+
+    static class Http implements JobHandler {
+        public String type() {
+            return "http-call";
+        }
+
+        public void handle(RunContext c) throws Exception {
+            HttpClient.newHttpClient()
+                    .send(
+                            HttpRequest.newBuilder(URI.create("https://example.com"))
+                                    .timeout(Duration.ofSeconds(10))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.discarding());
+        }
+    }
 }

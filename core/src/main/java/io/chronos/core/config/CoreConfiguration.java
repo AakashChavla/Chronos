@@ -6,8 +6,8 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class CoreConfiguration {
-  @Bean
-  public RunStateMachine runStateMachine() {
-    return new RunStateMachine();
-  }
+    @Bean
+    public RunStateMachine runStateMachine() {
+        return new RunStateMachine();
+    }
 }

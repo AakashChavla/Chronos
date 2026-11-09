@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = "io.chronos")
+@SpringBootApplication(scanBasePackages = {"io.chronos.api", "io.chronos.core"})
 @EnableScheduling
 public class ChronosApplication {
-  public static void main(String[] args) {
-    SpringApplication.run(ChronosApplication.class, args);
-  }
+    public static void main(String[] args) {
+        SpringApplication.run(ChronosApplication.class, args);
+    }
 }

@@ -1,5 +1,6 @@
 package io.chronos.api;
 
+import io.chronos.core.run.service.RunTransitionService;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,9 +27,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api")
 public class ApiController {
   private final JdbcTemplate jdbc;
+  private final RunTransitionService transitions;
 
-  public ApiController(JdbcTemplate jdbc) {
+  public ApiController(JdbcTemplate jdbc, RunTransitionService transitions) {
     this.jdbc = jdbc;
+    this.transitions = transitions;
   }
 
   public record Step(String stepKey, UUID jobDefinitionId, List<String> dependsOn) {}
@@ -107,16 +110,12 @@ public class ApiController {
 
   @PostMapping("/runs/{id}/retry")
   public void retry(@PathVariable("id") UUID id) {
-    jdbc.update(
-        "update job_run set status='QUEUED',run_at=now(),error=null where id=? and status in ('FAILED','DEAD')",
-        id);
+    transitions.retry(id);
   }
 
   @PostMapping("/runs/{id}/cancel")
   public void cancel(@PathVariable("id") UUID id) {
-    jdbc.update(
-        "update job_run set status='CANCELLED',finished_at=now() where id=? and status in ('QUEUED','RUNNING')",
-        id);
+    transitions.cancel(id);
   }
 
   @PostMapping("/runs/{id}/replay")

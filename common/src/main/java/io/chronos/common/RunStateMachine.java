@@ -7,7 +7,7 @@ public final class RunStateMachine {
   private static final Map<RunStatus, Set<RunStatus>> RULES =
       Map.of(
           RunStatus.QUEUED,
-          Set.of(RunStatus.RUNNING, RunStatus.CANCELLED),
+          Set.of(RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.SKIPPED),
           RunStatus.RUNNING,
           Set.of(
               RunStatus.QUEUED,

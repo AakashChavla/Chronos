@@ -1,5 +1,6 @@
 package io.chronos.scheduler;
 
+import io.chronos.core.run.service.RunTransitionService;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -20,9 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
     matchIfMissing = true)
 public class SchedulerService {
   private final JdbcTemplate jdbc;
+  private final RunTransitionService transitions;
 
-  public SchedulerService(JdbcTemplate jdbc) {
+  public SchedulerService(JdbcTemplate jdbc, RunTransitionService transitions) {
     this.jdbc = jdbc;
+    this.transitions = transitions;
   }
 
   @Transactional
@@ -48,8 +51,7 @@ public class SchedulerService {
         jdbc.update(
             "update job_definition set schedule_next_at=? where id=?", next.toOffsetDateTime(), id);
     }
-    jdbc.update(
-        "insert into job_run(job_definition_id,workflow_run_id,step_key,status,finished_at,error) select s.job_definition_id,wr.id,s.step_key,'SKIPPED',now(),'dependency failed' from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and exists(select 1 from unnest(s.depends_on) dep where exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status in ('FAILED','DEAD')))");
+    transitions.skipFailedWorkflowSteps();
     jdbc.update(
         "insert into job_run(job_definition_id,workflow_run_id,step_key) select s.job_definition_id,wr.id,s.step_key from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and not exists(select 1 from unnest(s.depends_on) dep where not exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status='SUCCEEDED'))");
     jdbc.update(

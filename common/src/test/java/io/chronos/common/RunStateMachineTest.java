@@ -24,4 +24,9 @@ class RunStateMachineTest {
   void supportsRetryFromDead() {
     assertDoesNotThrow(() -> machine.require(RunStatus.DEAD, RunStatus.QUEUED));
   }
+
+  @Test
+  void supportsSkippingQueuedRuns() {
+    assertDoesNotThrow(() -> machine.require(RunStatus.QUEUED, RunStatus.SKIPPED));
+  }
 }

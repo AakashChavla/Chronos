@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.chronos.core.job.domain.JobDefinition;
 import io.chronos.core.job.repository.JdbcJobRepository;
+import java.util.Properties;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ class JobServiceIT {
     dataSource.setUrl(POSTGRES.getJdbcUrl());
     dataSource.setUsername(POSTGRES.getUsername());
     dataSource.setPassword(POSTGRES.getPassword());
+    Properties properties = new Properties();
+    properties.setProperty("options", "-c TimeZone=UTC");
+    dataSource.setConnectionProperties(properties);
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     jdbc.execute("drop table if exists job_definition");
     jdbc.execute(

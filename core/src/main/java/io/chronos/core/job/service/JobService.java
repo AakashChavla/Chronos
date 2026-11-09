@@ -48,16 +48,16 @@ public final class JobService {
     JobDefinition updated =
         new JobDefinition(
             id,
-            command.name(),
-            command.handlerType(),
-            command.payloadJson(),
-            command.scheduleCron(),
-            command.timezone(),
+            Optional.ofNullable(command.name()).orElse(current.name()),
+            Optional.ofNullable(command.handlerType()).orElse(current.handlerType()),
+            Optional.ofNullable(command.payloadJson()).orElse(current.payloadJson()),
+            Optional.ofNullable(command.scheduleCron()).orElse(current.scheduleCron()),
+            Optional.ofNullable(command.timezone()).orElse(current.timezone()),
             current.scheduleNextAt(),
-            command.maxAttempts(),
-            command.timeoutSec(),
-            command.concurrencyLimit(),
-            command.enabled(),
+            Optional.ofNullable(command.maxAttempts()).orElse(current.maxAttempts()),
+            Optional.ofNullable(command.timeoutSec()).orElse(current.timeoutSec()),
+            Optional.ofNullable(command.concurrencyLimit()).orElse(current.concurrencyLimit()),
+            Optional.ofNullable(command.enabled()).orElse(current.enabled()),
             current.createdAt());
     return jobs.update(updated);
   }

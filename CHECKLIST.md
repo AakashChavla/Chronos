@@ -22,3 +22,13 @@
 - `docker compose up -d --build` — passed after Docker Desktop recovered; PostgreSQL healthy, API and three workers started.
 - `scripts/demo.sh` — passed: exactly 1,000 runs succeeded at attempt 0. The first attempt at the script exposed host prerequisites (Git Bash and jq) and an overloaded 20-client burst; the script now creates a dedicated 100-concurrency job and submits at five clients.
 - Runtime probes — `/actuator/health` returned `UP`, dashboard returned HTTP 200, API returned 6 jobs and 3 workers.
+
+## Phase 2 verification evidence (2026-11-09)
+
+- `./mvnw -B verify` — failed in `core` because Testcontainers could not find a Docker environment from the Windows Maven process (`Could not find a valid Docker environment`). The Docker CLI and Compose work through the Docker Desktop context.
+- `./mvnw -B -DskipITs verify` — passed; compiles all modules and runs the 3 existing unit tests. This explicitly skips `JobServiceIT`.
+- `docker compose up -d --build` — passed with the layered API; `/actuator/health` is `UP`, `/api/jobs` returns the same snake_case field names and JSON payload wrapper, and the dashboard returns HTTP 200.
+- `scripts/demo.sh` — passed again against the layered API: exactly 1,000 runs succeeded at attempt 0.
+- Frontend `npm run lint` and `npm run test:ci` remain unavailable because the package scripts and their test setup have not been implemented.
+- `./mvnw -B spotless:apply` — passed and formatted the Java sources with Google Java Format; `./mvnw -B -DskipITs verify` then passed with Spotless checks enabled.
+- `./mvnw -B verify` — rerun after the formatting/build changes; same local Testcontainers Docker discovery error, so PostgreSQL integration test did not execute.

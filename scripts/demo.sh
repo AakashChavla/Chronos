@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 base=${BASE_URL:-http://localhost:18080}
+demo_name="demo-1000-runs-$(date +%s)-$$"
 job=$(curl -fsS -X POST -H 'Content-Type: application/json' \
-  -d '{"name":"demo-1000-runs","handlerType":"sleep-and-log","payloadJson":"{}","maxAttempts":1,"concurrencyLimit":100,"enabled":true}' \
+  -d "{\"name\":\"$demo_name\",\"handlerType\":\"sleep-and-log\",\"payloadJson\":\"{}\",\"maxAttempts\":1,\"concurrencyLimit\":100,\"enabled\":true}" \
   "$base/api/jobs" | jq -r '.id')
 if [[ -z "$job" || "$job" == "null" ]]; then
   echo "FAIL: no non-flaky job is available for the normal-case demo" >&2

@@ -1,9 +1,60 @@
 package io.chronos.scheduler;
-import org.springframework.jdbc.core.JdbcTemplate; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Component; import org.springframework.transaction.annotation.Transactional; import org.springframework.scheduling.support.CronExpression; import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty; import java.time.*; import java.util.*;
-@Component @ConditionalOnProperty(name="chronos.scheduler-enabled",havingValue="true",matchIfMissing=true) public class SchedulerService { private final JdbcTemplate jdbc; public SchedulerService(JdbcTemplate jdbc){this.jdbc=jdbc;}
- @Transactional @Scheduled(fixedDelay=1000) public void tick(){if(!Boolean.TRUE.equals(jdbc.queryForObject("select pg_try_advisory_xact_lock(987654321)",Boolean.class)))return;Instant now=Instant.now();List<Map<String,Object>> due=jdbc.queryForList("select id,schedule_cron,timezone from job_definition where enabled and schedule_cron is not null and (schedule_next_at is null or schedule_next_at<=?) for update",java.sql.Timestamp.from(now));for(Map<String,Object> job:due){UUID id=(UUID)job.get("id");jdbc.update("insert into job_run(job_definition_id,run_at) values (?,?)",id,job.get("schedule_next_at")==null?java.sql.Timestamp.from(now):job.get("schedule_next_at"));ZonedDateTime base=now.atZone(ZoneId.of(String.valueOf(job.get("timezone"))));ZonedDateTime next=CronExpression.parse(String.valueOf(job.get("schedule_cron"))).next(base);if(next!=null)jdbc.update("update job_definition set schedule_next_at=? where id=?",java.sql.Timestamp.from(next.toInstant()),id);}
- jdbc.update("insert into job_run(job_definition_id,workflow_run_id,step_key,status,finished_at,error) select s.job_definition_id,wr.id,s.step_key,'SKIPPED',now(),'dependency failed' from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and exists(select 1 from unnest(s.depends_on) dep where exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status in ('FAILED','DEAD')))");
- jdbc.update("insert into job_run(job_definition_id,workflow_run_id,step_key) select s.job_definition_id,wr.id,s.step_key from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and not exists(select 1 from unnest(s.depends_on) dep where not exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status='SUCCEEDED'))");
- jdbc.update("update workflow_run w set status='FAILED',finished_at=now() where w.status='RUNNING' and exists(select 1 from job_run r where r.workflow_run_id=w.id and r.status in ('FAILED','DEAD'))");
- jdbc.update("update workflow_run wr set status='SUCCEEDED',finished_at=now() where wr.status='RUNNING' and not exists(select 1 from workflow_step s where s.workflow_id=wr.workflow_id and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key and r.status='SUCCEEDED'))"); }
+
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.support.CronExpression;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+@Component
+@ConditionalOnProperty(
+    name = "chronos.scheduler-enabled",
+    havingValue = "true",
+    matchIfMissing = true)
+public class SchedulerService {
+  private final JdbcTemplate jdbc;
+
+  public SchedulerService(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  @Transactional
+  @Scheduled(fixedDelay = 1000)
+  public void tick() {
+    if (!Boolean.TRUE.equals(
+        jdbc.queryForObject("select pg_try_advisory_xact_lock(987654321)", Boolean.class))) return;
+    List<Map<String, Object>> due =
+        jdbc.queryForList(
+            "select id,schedule_cron,timezone,schedule_next_at,now() as db_now from job_definition where enabled and schedule_cron is not null and (schedule_next_at is null or schedule_next_at<=now()) for update");
+    for (Map<String, Object> job : due) {
+      UUID id = (UUID) job.get("id");
+      jdbc.update(
+          "insert into job_run(job_definition_id,run_at) values (?,?)",
+          id,
+          job.get("schedule_next_at") == null ? job.get("db_now") : job.get("schedule_next_at"));
+      ZonedDateTime base =
+          ((OffsetDateTime) job.get("db_now"))
+              .atZoneSameInstant(ZoneId.of(String.valueOf(job.get("timezone"))));
+      ZonedDateTime next =
+          CronExpression.parse(String.valueOf(job.get("schedule_cron"))).next(base);
+      if (next != null)
+        jdbc.update(
+            "update job_definition set schedule_next_at=? where id=?", next.toOffsetDateTime(), id);
+    }
+    jdbc.update(
+        "insert into job_run(job_definition_id,workflow_run_id,step_key,status,finished_at,error) select s.job_definition_id,wr.id,s.step_key,'SKIPPED',now(),'dependency failed' from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and exists(select 1 from unnest(s.depends_on) dep where exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status in ('FAILED','DEAD')))");
+    jdbc.update(
+        "insert into job_run(job_definition_id,workflow_run_id,step_key) select s.job_definition_id,wr.id,s.step_key from workflow_run wr join workflow_step s on s.workflow_id=wr.workflow_id where wr.status='RUNNING' and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key) and not exists(select 1 from unnest(s.depends_on) dep where not exists(select 1 from job_run p where p.workflow_run_id=wr.id and p.step_key=dep and p.status='SUCCEEDED'))");
+    jdbc.update(
+        "update workflow_run w set status='FAILED',finished_at=now() where w.status='RUNNING' and exists(select 1 from job_run r where r.workflow_run_id=w.id and r.status in ('FAILED','DEAD'))");
+    jdbc.update(
+        "update workflow_run wr set status='SUCCEEDED',finished_at=now() where wr.status='RUNNING' and not exists(select 1 from workflow_step s where s.workflow_id=wr.workflow_id and not exists(select 1 from job_run r where r.workflow_run_id=wr.id and r.step_key=s.step_key and r.status='SUCCEEDED'))");
+  }
 }

@@ -20,7 +20,7 @@ Make worker execution capacity bounded and safe under lease loss, shutdown, canc
 2. Worker timeout path: interrupt at timeout, report handlers still alive after the five-second grace, keep the worker capacity slot occupied until the handler exits, and stop heartbeating so the reaper can recover the run without allowing a late result write.
 3. Add a `NonRetryableException` handler outcome that transitions directly to FAILED, plus tests for state and event behavior.
 4. Tests: unit tests for poll jitter bounds/lifecycle waiting/capacity, Testcontainers for shutdown release and terminal non-retryable failure. Do not claim SIGKILL, SIGSTOP, or cancellation latency criteria without running them.
-5. No new dependency planned. Use Java concurrency primitives and existing logging; zombie metric export is deferred unless the worker app has a scrapeable metrics endpoint without adding a REST server.
+5. Add `spring-boot-starter-test` as a worker test-scope dependency so SmartLifecycle shutdown and cancellation can be tested with controllable handlers and latches. No new runtime dependency. The worker records a lease-guarded `HANDLER_ZOMBIE` run event; the API exports its cumulative count as `chronos_handler_zombie_total` so workers do not need a REST server.
 
 ## Dependency changes
 

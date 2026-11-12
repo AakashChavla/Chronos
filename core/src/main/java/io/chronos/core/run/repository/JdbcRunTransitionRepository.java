@@ -108,12 +108,41 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
+    public boolean addWorkerEvent(
+            UUID runId, String type, String workerId, UUID leaseToken, String detail) {
+        return jdbc.update(
+                        "insert into run_event(run_id,type,worker_id,attempt,detail) "
+                                + "select id,?,?,attempt,? from job_run where id=? "
+                                + "and status='RUNNING' and locked_by=? and lease_token=? and lease_until>now()",
+                        type,
+                        workerId,
+                        detail,
+                        runId,
+                        workerId,
+                        leaseToken)
+                == 1;
+    }
+
+    @Override
     public boolean complete(UUID runId, String workerId, UUID leaseToken) {
         return jdbc.update(
                         "update job_run set status=case when cancel_requested then 'CANCELLED' "
                                 + "else 'SUCCEEDED' end,finished_at=now(),lease_until=null,"
                                 + "locked_by=null,lease_token=null where id=? and status='RUNNING' "
                                 + "and locked_by=? and lease_token=? and lease_until>now()",
+                        runId,
+                        workerId,
+                        leaseToken)
+                == 1;
+    }
+
+    @Override
+    public boolean release(UUID runId, String workerId, UUID leaseToken) {
+        return jdbc.update(
+                        "update job_run set status='QUEUED',run_at=now(),error='worker shutdown release',"
+                                + "lease_until=null,locked_by=null,lease_token=null "
+                                + "where id=? and status='RUNNING' and locked_by=? and lease_token=? "
+                                + "and lease_until>now()",
                         runId,
                         workerId,
                         leaseToken)
@@ -147,9 +176,25 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
+    public boolean failNonRetryable(
+            UUID runId, String workerId, UUID leaseToken, int nextAttempt, String error) {
+        return jdbc.update(
+                        "update job_run set status='FAILED',attempt=?,error=?,finished_at=now(),"
+                                + "lease_until=null,locked_by=null,lease_token=null "
+                                + "where id=? and status='RUNNING' and locked_by=? and lease_token=? "
+                                + "and lease_until>now()",
+                        nextAttempt,
+                        error,
+                        runId,
+                        workerId,
+                        leaseToken)
+                == 1;
+    }
+
+    @Override
     public List<ExpiredRun> findExpired(int batchSize) {
         return jdbc.query(
-                "select r.id,r.locked_by,r.lease_token,r.attempt,j.max_attempts "
+                "select r.id,r.locked_by,r.lease_token,r.attempt,j.max_attempts,r.cancel_requested "
                         + "from job_run r join job_definition j on j.id=r.job_definition_id "
                         + "where r.status='RUNNING' and r.lease_until<now() "
                         + "order by r.lease_until limit ? for update of r skip locked",
@@ -159,7 +204,8 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
                                 rs.getString("locked_by"),
                                 rs.getObject("lease_token", UUID.class),
                                 rs.getInt("attempt"),
-                                rs.getInt("max_attempts")),
+                                rs.getInt("max_attempts"),
+                                rs.getBoolean("cancel_requested")),
                 batchSize);
     }
 
@@ -174,12 +220,14 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     public boolean expire(ExpiredRun run, RunStatus nextStatus, int nextAttempt) {
         return jdbc.update(
                         "update job_run set status=?,attempt=?,locked_by=null,lease_until=null,"
-                                + "lease_token=null,run_at=now(),error='worker lease expired',"
-                                + "finished_at=case when ?='DEAD' then now() else null end "
+                                + "lease_token=null,run_at=now(),error=case when ?='CANCELLED' "
+                                + "then 'cancelled after worker lease expired' else 'worker lease expired' end,"
+                                + "finished_at=case when ? in ('DEAD','CANCELLED') then now() else null end "
                                 + "where id=? and status='RUNNING' and locked_by=? and lease_token=? "
                                 + "and lease_until<now()",
                         nextStatus.name(),
                         nextAttempt,
+                        nextStatus.name(),
                         nextStatus.name(),
                         run.id(),
                         run.workerId(),

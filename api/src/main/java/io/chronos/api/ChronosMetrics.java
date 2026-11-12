@@ -12,7 +12,8 @@ public class ChronosMetrics {
     private final JdbcTemplate jdbc;
     private final AtomicLong queue = new AtomicLong(),
             running = new AtomicLong(),
-            workers = new AtomicLong();
+            workers = new AtomicLong(),
+            zombies = new AtomicLong();
     private final AtomicReference<Double> p95 = new AtomicReference<>(0d);
 
     public ChronosMetrics(JdbcTemplate jdbc, MeterRegistry registry) {
@@ -20,6 +21,7 @@ public class ChronosMetrics {
         registry.gauge("chronos_queue_depth", queue);
         registry.gauge("chronos_running_count", running);
         registry.gauge("chronos_worker_count", workers);
+        registry.gauge("chronos_handler_zombie_total", zombies);
         registry.gauge("chronos_run_duration_p95_seconds", p95, AtomicReference::get);
         for (String s :
                 new String[] {
@@ -42,6 +44,7 @@ public class ChronosMetrics {
         workers.set(
                 value(
                         "select count(*) from worker_node where heartbeat_at>now()-interval '30 seconds'"));
+        zombies.set(value("select count(*) from run_event where type='HANDLER_ZOMBIE'"));
         counts.forEach(
                 (s, c) ->
                         c.set(

@@ -48,6 +48,41 @@ class RunTransitionServiceTest {
     }
 
     @Test
+    void releasesClaimWithoutChangingAttempt() {
+        UUID runId = UUID.randomUUID();
+        UUID token = UUID.randomUUID();
+        when(repository.release(runId, "worker-1", token)).thenReturn(true);
+
+        assertThat(transitions.release(runId, "worker-1", token)).isTrue();
+        verify(repository).release(runId, "worker-1", token);
+    }
+
+    @Test
+    void recordsWorkerEventOnlyWhenLeaseIsCurrent() {
+        UUID runId = UUID.randomUUID();
+        UUID token = UUID.randomUUID();
+        when(repository.addWorkerEvent(runId, "HANDLER_ZOMBIE", "worker-1", token, "detail"))
+                .thenReturn(true);
+
+        assertThat(
+                        transitions.recordWorkerEvent(
+                                runId, "HANDLER_ZOMBIE", "worker-1", token, "detail"))
+                .isTrue();
+    }
+
+    @Test
+    void marksNonRetryableFailureAsFailedImmediately() {
+        UUID runId = UUID.randomUUID();
+        UUID token = UUID.randomUUID();
+        when(repository.failNonRetryable(runId, "worker-1", token, 2, "invalid payload"))
+                .thenReturn(true);
+
+        assertThat(transitions.failNonRetryable(runId, "worker-1", token, 1, "invalid payload"))
+                .isTrue();
+        verify(repository).addErrorLog(runId, "invalid payload");
+    }
+
+    @Test
     void recordsFailureAndChoosesRetryOrDeadState() {
         UUID runId = UUID.randomUUID();
         UUID token = UUID.randomUUID();
@@ -79,7 +114,8 @@ class RunTransitionServiceTest {
 
     @Test
     void reapsExpiredRunsAndIncrementsAttempts() {
-        ExpiredRun expired = new ExpiredRun(UUID.randomUUID(), "worker-1", UUID.randomUUID(), 0, 3);
+        ExpiredRun expired =
+                new ExpiredRun(UUID.randomUUID(), "worker-1", UUID.randomUUID(), 0, 3, false);
         when(repository.acquireReaperLock()).thenReturn(true);
         when(repository.findExpired(10)).thenReturn(List.of(expired));
         when(repository.expire(expired, RunStatus.QUEUED, 1)).thenReturn(true);

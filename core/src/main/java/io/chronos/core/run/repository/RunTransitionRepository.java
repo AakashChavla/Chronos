@@ -16,7 +16,12 @@ public interface RunTransitionRepository {
 
     void addRunEvent(UUID runId, String type, String workerId, int attempt, String detail);
 
+    boolean addWorkerEvent(
+            UUID runId, String type, String workerId, UUID leaseToken, String detail);
+
     boolean complete(UUID runId, String workerId, UUID leaseToken);
+
+    boolean release(UUID runId, String workerId, UUID leaseToken);
 
     boolean fail(
             UUID runId,
@@ -26,6 +31,9 @@ public interface RunTransitionRepository {
             int nextAttempt,
             String error,
             double delaySeconds);
+
+    boolean failNonRetryable(
+            UUID runId, String workerId, UUID leaseToken, int nextAttempt, String error);
 
     List<ExpiredRun> findExpired(int batchSize);
 

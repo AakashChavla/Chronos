@@ -40,6 +40,7 @@ class RunTransitionServiceIT {
         properties.setProperty("options", "-c TimeZone=UTC");
         dataSource.setConnectionProperties(properties);
         jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("drop table if exists run_log");
         jdbc.execute("drop table if exists run_event");
         jdbc.execute("drop table if exists job_run");
         jdbc.execute("drop table if exists job_definition");
@@ -60,6 +61,9 @@ class RunTransitionServiceIT {
                 "create table run_event (id bigserial primary key, run_id uuid not null references job_run(id), "
                         + "ts timestamptz not null default now(), type text not null, worker_id text, "
                         + "attempt int not null, detail text)");
+        jdbc.execute(
+                "create table run_log (id bigserial primary key, run_id uuid references job_run(id), "
+                        + "created_at timestamptz not null default now(), level text not null, message text not null)");
         jobId = UUID.randomUUID();
         jdbc.update(
                 "insert into job_definition(id,name,handler_type,payload_json,timeout_sec,max_attempts,concurrency_limit) "
@@ -131,22 +135,29 @@ class RunTransitionServiceIT {
     void expiresLeasesAndMovesExhaustedRunsToDead() {
         UUID retryingRunId = UUID.randomUUID();
         UUID exhaustedRunId = UUID.randomUUID();
+        UUID cancelledRunId = UUID.randomUUID();
         jdbc.update(
-                "insert into job_run(id,job_definition_id,status,attempt,locked_by,lease_token,lease_until) "
-                        + "values(?,?,'RUNNING',0,'worker-1',?,now()-interval '1 second'), "
-                        + "(?,?,'RUNNING',2,'worker-1',?,now()-interval '1 second')",
+                "insert into job_run(id,job_definition_id,status,attempt,locked_by,lease_token,lease_until,cancel_requested) "
+                        + "values(?,?,'RUNNING',0,'worker-1',?,now()-interval '1 second',false), "
+                        + "(?,?,'RUNNING',2,'worker-1',?,now()-interval '1 second',false), "
+                        + "(?,?,'RUNNING',1,'worker-1',?,now()-interval '1 second',true)",
                 retryingRunId,
                 jobId,
                 UUID.randomUUID(),
                 exhaustedRunId,
                 jobId,
+                UUID.randomUUID(),
+                cancelledRunId,
+                jobId,
                 UUID.randomUUID());
 
-        assertThat(transitions.reapExpired()).isEqualTo(2);
+        assertThat(transitions.reapExpired()).isEqualTo(3);
         assertThat(status(retryingRunId)).isEqualTo("QUEUED");
         assertThat(attempt(retryingRunId)).isEqualTo(1);
         assertThat(status(exhaustedRunId)).isEqualTo("DEAD");
         assertThat(attempt(exhaustedRunId)).isEqualTo(3);
+        assertThat(status(cancelledRunId)).isEqualTo("CANCELLED");
+        assertThat(attempt(cancelledRunId)).isEqualTo(1);
     }
 
     @Test
@@ -177,6 +188,64 @@ class RunTransitionServiceIT {
 
         assertThat(transitions.cancel(queuedRunId)).isTrue();
         assertThat(status(queuedRunId)).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void releasesClaimWithoutIncrementingAttempt() {
+        ClaimedRun claimed = transitions.claimBatch("worker-1", 1).getFirst();
+
+        assertThat(transitions.release(claimed.id(), "worker-1", claimed.leaseToken())).isTrue();
+        assertThat(status(claimed.id())).isEqualTo("QUEUED");
+        assertThat(attempt(claimed.id())).isZero();
+        assertThat(
+                        jdbc.queryForObject(
+                                "select lease_token is null from job_run where id=?",
+                                Boolean.class,
+                                claimed.id()))
+                .isTrue();
+    }
+
+    @Test
+    void nonRetryableFailureIsTerminalAndFenced() {
+        ClaimedRun claimed = transitions.claimBatch("worker-1", 1).getFirst();
+
+        assertThat(
+                        transitions.failNonRetryable(
+                                claimed.id(),
+                                "worker-1",
+                                claimed.leaseToken(),
+                                0,
+                                "invalid payload"))
+                .isTrue();
+        assertThat(status(claimed.id())).isEqualTo("FAILED");
+        assertThat(attempt(claimed.id())).isEqualTo(1);
+        assertThat(
+                        transitions.failNonRetryable(
+                                claimed.id(), "worker-1", claimed.leaseToken(), 1, "late failure"))
+                .isFalse();
+    }
+
+    @Test
+    void writesWorkerEventOnlyWhileClaimLeaseIsValid() {
+        ClaimedRun claimed = transitions.claimBatch("worker-1", 1).getFirst();
+
+        assertThat(
+                        transitions.recordWorkerEvent(
+                                claimed.id(),
+                                "HANDLER_ZOMBIE",
+                                "worker-1",
+                                claimed.leaseToken(),
+                                "handler exceeded timeout"))
+                .isTrue();
+        assertThat(transitions.complete(claimed.id(), "worker-1", claimed.leaseToken())).isTrue();
+        assertThat(
+                        transitions.recordWorkerEvent(
+                                claimed.id(),
+                                "HANDLER_ZOMBIE",
+                                "worker-1",
+                                claimed.leaseToken(),
+                                "late event"))
+                .isFalse();
     }
 
     private String status(UUID runId) {

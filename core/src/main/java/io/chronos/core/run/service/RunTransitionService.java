@@ -48,10 +48,21 @@ public class RunTransitionService {
         runs.addRunEvent(runId, type, workerId, attempt, detail);
     }
 
+    @Transactional
+    public boolean recordWorkerEvent(
+            UUID runId, String type, String workerId, UUID leaseToken, String detail) {
+        return runs.addWorkerEvent(runId, type, workerId, leaseToken, detail);
+    }
+
     public boolean complete(UUID runId, String workerId, UUID leaseToken) {
         states.require(RunStatus.RUNNING, RunStatus.SUCCEEDED);
         states.require(RunStatus.RUNNING, RunStatus.CANCELLED);
         return runs.complete(runId, workerId, leaseToken);
+    }
+
+    public boolean release(UUID runId, String workerId, UUID leaseToken) {
+        states.require(RunStatus.RUNNING, RunStatus.QUEUED);
+        return runs.release(runId, workerId, leaseToken);
     }
 
     @Transactional
@@ -76,15 +87,28 @@ public class RunTransitionService {
     }
 
     @Transactional
+    public boolean failNonRetryable(
+            UUID runId, String workerId, UUID leaseToken, int attempt, String error) {
+        states.require(RunStatus.RUNNING, RunStatus.FAILED);
+        boolean changed = runs.failNonRetryable(runId, workerId, leaseToken, attempt + 1, error);
+        if (changed) {
+            runs.addErrorLog(runId, error);
+        }
+        return changed;
+    }
+
+    @Transactional
     public int reapExpired() {
         if (!runs.acquireReaperLock()) {
             return 0;
         }
         int changed = 0;
         for (ExpiredRun run : runs.findExpired(workerProperties.batchSize())) {
-            int nextAttempt = run.attempt() + 1;
+            int nextAttempt = run.cancellationRequested() ? run.attempt() : run.attempt() + 1;
             RunStatus nextStatus =
-                    nextAttempt >= run.maxAttempts() ? RunStatus.DEAD : RunStatus.QUEUED;
+                    run.cancellationRequested()
+                            ? RunStatus.CANCELLED
+                            : nextAttempt >= run.maxAttempts() ? RunStatus.DEAD : RunStatus.QUEUED;
             states.require(RunStatus.RUNNING, nextStatus);
             if (runs.expire(run, nextStatus, nextAttempt)) {
                 changed++;

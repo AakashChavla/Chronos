@@ -3,6 +3,7 @@ package io.chronos.core.run.repository;
 import io.chronos.common.RunStatus;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.domain.ExpiredRun;
+import io.chronos.core.run.domain.HeartbeatResult;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -64,16 +65,22 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
-    public boolean heartbeat(UUID runId, String workerId, UUID leaseToken, long leaseDurationMs) {
-        return jdbc.update(
+    public HeartbeatResult heartbeat(
+            UUID runId, String workerId, UUID leaseToken, long leaseDurationMs) {
+        List<Boolean> cancellationRequests =
+                jdbc.query(
                         "update job_run set lease_until=now()+(? * interval '1 millisecond') "
                                 + "where id=? and status='RUNNING' and locked_by=? "
-                                + "and lease_token=? and lease_until>now()",
+                                + "and lease_token=? and lease_until>now() "
+                                + "returning cancel_requested",
+                        (rs, rowNum) -> rs.getBoolean("cancel_requested"),
                         leaseDurationMs,
                         runId,
                         workerId,
-                        leaseToken)
-                == 1;
+                        leaseToken);
+        return cancellationRequests.isEmpty()
+                ? new HeartbeatResult(false, false)
+                : new HeartbeatResult(true, cancellationRequests.getFirst());
     }
 
     @Override
@@ -103,7 +110,8 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     @Override
     public boolean complete(UUID runId, String workerId, UUID leaseToken) {
         return jdbc.update(
-                        "update job_run set status='SUCCEEDED',finished_at=now(),lease_until=null,"
+                        "update job_run set status=case when cancel_requested then 'CANCELLED' "
+                                + "else 'SUCCEEDED' end,finished_at=now(),lease_until=null,"
                                 + "locked_by=null,lease_token=null where id=? and status='RUNNING' "
                                 + "and locked_by=? and lease_token=? and lease_until>now()",
                         runId,
@@ -156,6 +164,13 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
+    public boolean acquireReaperLock() {
+        return Boolean.TRUE.equals(
+                jdbc.queryForObject(
+                        "select pg_try_advisory_xact_lock(29491784818314291)", Boolean.class));
+    }
+
+    @Override
     public boolean expire(ExpiredRun run, RunStatus nextStatus, int nextAttempt) {
         return jdbc.update(
                         "update job_run set status=?,attempt=?,locked_by=null,lease_until=null,"
@@ -183,12 +198,19 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
 
     @Override
     public boolean cancel(UUID runId) {
-        return jdbc.update(
-                        "update job_run set status='CANCELLED',finished_at=now(),locked_by=null,"
-                                + "lease_until=null,lease_token=null where id=? "
-                                + "and status in ('QUEUED','RUNNING')",
-                        runId)
-                == 1;
+        List<UUID> changed =
+                jdbc.query(
+                        "with changed as (update job_run set status=case when status='QUEUED' "
+                                + "then 'CANCELLED' else status end,cancel_requested=(status='RUNNING'),"
+                                + "finished_at=case when status='QUEUED' then now() else finished_at end "
+                                + "where id=? and status in ('QUEUED','RUNNING') returning id,status,attempt,locked_by), "
+                                + "event as (insert into run_event(run_id,type,worker_id,attempt,detail) "
+                                + "select id,'CANCEL_REQUESTED',locked_by,attempt,null from changed "
+                                + "where status='RUNNING' returning run_id) "
+                                + "select id from changed",
+                        (rs, rowNum) -> rs.getObject("id", UUID.class),
+                        runId);
+        return !changed.isEmpty();
     }
 
     @Override

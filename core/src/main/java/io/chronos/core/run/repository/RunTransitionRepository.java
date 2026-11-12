@@ -3,13 +3,14 @@ package io.chronos.core.run.repository;
 import io.chronos.common.RunStatus;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.domain.ExpiredRun;
+import io.chronos.core.run.domain.HeartbeatResult;
 import java.util.List;
 import java.util.UUID;
 
 public interface RunTransitionRepository {
     List<ClaimedRun> claimBatch(String workerId, int batchSize, long leaseDurationMs);
 
-    boolean heartbeat(UUID runId, String workerId, UUID leaseToken, long leaseDurationMs);
+    HeartbeatResult heartbeat(UUID runId, String workerId, UUID leaseToken, long leaseDurationMs);
 
     boolean start(UUID runId, String workerId, UUID leaseToken);
 
@@ -27,6 +28,8 @@ public interface RunTransitionRepository {
             double delaySeconds);
 
     List<ExpiredRun> findExpired(int batchSize);
+
+    boolean acquireReaperLock();
 
     boolean expire(ExpiredRun run, RunStatus nextStatus, int nextAttempt);
 

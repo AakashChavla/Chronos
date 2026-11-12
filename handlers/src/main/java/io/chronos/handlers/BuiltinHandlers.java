@@ -25,6 +25,9 @@ public class BuiltinHandlers {
         }
 
         public void handle(RunContext c) throws Exception {
+            if (c.isCancellationRequested()) {
+                return;
+            }
             Thread.sleep(100);
         }
     }

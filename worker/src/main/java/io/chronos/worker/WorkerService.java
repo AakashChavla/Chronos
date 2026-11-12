@@ -3,6 +3,7 @@ package io.chronos.worker;
 import io.chronos.common.RunContext;
 import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
+import io.chronos.core.run.domain.HeartbeatResult;
 import io.chronos.core.run.service.RetryPolicy;
 import io.chronos.core.run.service.RunTransitionService;
 import io.chronos.handlers.BuiltinHandlers;
@@ -90,13 +91,14 @@ public class WorkerService {
 
     private void execute(ClaimedRun run) {
         AtomicBoolean leaseLost = new AtomicBoolean();
+        AtomicBoolean cancellationRequested = new AtomicBoolean();
         AtomicReference<Future<?>> taskReference = new AtomicReference<>();
         ScheduledFuture<?> beat =
                 heartbeats.scheduleAtFixedRate(
                         () -> {
-                            boolean renewed =
+                            HeartbeatResult result =
                                     transitions.heartbeat(run.id(), worker, run.leaseToken());
-                            if (!renewed) {
+                            if (!result.leaseRenewed()) {
                                 leaseLost.set(true);
                                 Future<?> task = taskReference.get();
                                 if (task != null) {
@@ -107,6 +109,12 @@ public class WorkerService {
                                         run.id(),
                                         run.jobDefinitionId(),
                                         worker);
+                            } else if (result.cancellationRequested()) {
+                                cancellationRequested.set(true);
+                                Future<?> task = taskReference.get();
+                                if (task != null) {
+                                    task.cancel(true);
+                                }
                             }
                         },
                         heartbeatIntervalMs,
@@ -137,7 +145,8 @@ public class WorkerService {
                                                         run.id(),
                                                         run.jobDefinitionId(),
                                                         run.payloadJson(),
-                                                        run.idempotencyKey()));
+                                                        run.idempotencyKey(),
+                                                        cancellationRequested::get));
                                     } catch (Exception error) {
                                         throw new CompletionException(error);
                                     }
@@ -153,6 +162,10 @@ public class WorkerService {
             if (leaseLost.get()) {
                 return;
             }
+            if (cancellationRequested.get()) {
+                transitions.complete(run.id(), worker, run.leaseToken());
+                return;
+            }
             if (!transitions.complete(run.id(), worker, run.leaseToken())) {
                 LOGGER.warn(
                         "Worker result discarded after lease loss for runId={} jobId={} workerId={}",
@@ -162,6 +175,10 @@ public class WorkerService {
             }
         } catch (Exception error) {
             if (leaseLost.get()) {
+                return;
+            }
+            if (cancellationRequested.get()) {
+                transitions.complete(run.id(), worker, run.leaseToken());
                 return;
             }
             double delay =

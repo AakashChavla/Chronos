@@ -2,6 +2,7 @@ package io.chronos.core.run.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +10,7 @@ import io.chronos.common.RunStateMachine;
 import io.chronos.common.RunStatus;
 import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ExpiredRun;
+import io.chronos.core.run.domain.HeartbeatResult;
 import io.chronos.core.run.repository.RunTransitionRepository;
 import java.util.List;
 import java.util.UUID;
@@ -36,10 +38,11 @@ class RunTransitionServiceTest {
     void delegatesHeartbeatAndCompletion() {
         UUID runId = UUID.randomUUID();
         UUID token = UUID.randomUUID();
-        when(repository.heartbeat(runId, "worker-1", token, 30000)).thenReturn(true);
+        when(repository.heartbeat(runId, "worker-1", token, 30000))
+                .thenReturn(new HeartbeatResult(true, false));
         when(repository.complete(runId, "worker-1", token)).thenReturn(true);
 
-        assertThat(transitions.heartbeat(runId, "worker-1", token)).isTrue();
+        assertThat(transitions.heartbeat(runId, "worker-1", token).leaseRenewed()).isTrue();
         assertThat(transitions.complete(runId, "worker-1", token)).isTrue();
         verify(repository).complete(runId, "worker-1", token);
     }
@@ -57,6 +60,14 @@ class RunTransitionServiceTest {
     }
 
     @Test
+    void skipsExpiredRunScanWhenAnotherInstanceOwnsReaperLock() {
+        when(repository.acquireReaperLock()).thenReturn(false);
+
+        assertThat(transitions.reapExpired()).isZero();
+        verify(repository, never()).findExpired(10);
+    }
+
+    @Test
     void marksRunDeadWhenFailureReachesMaxAttempts() {
         UUID runId = UUID.randomUUID();
         UUID token = UUID.randomUUID();
@@ -69,6 +80,7 @@ class RunTransitionServiceTest {
     @Test
     void reapsExpiredRunsAndIncrementsAttempts() {
         ExpiredRun expired = new ExpiredRun(UUID.randomUUID(), "worker-1", UUID.randomUUID(), 0, 3);
+        when(repository.acquireReaperLock()).thenReturn(true);
         when(repository.findExpired(10)).thenReturn(List.of(expired));
         when(repository.expire(expired, RunStatus.QUEUED, 1)).thenReturn(true);
 

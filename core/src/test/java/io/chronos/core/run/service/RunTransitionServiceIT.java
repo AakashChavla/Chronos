@@ -9,6 +9,9 @@ import io.chronos.core.run.repository.JdbcRunTransitionRepository;
 import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,6 +40,7 @@ class RunTransitionServiceIT {
         properties.setProperty("options", "-c TimeZone=UTC");
         dataSource.setConnectionProperties(properties);
         jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("drop table if exists run_event");
         jdbc.execute("drop table if exists job_run");
         jdbc.execute("drop table if exists job_definition");
         jdbc.execute(
@@ -50,7 +54,12 @@ class RunTransitionServiceIT {
                         + "status text not null default 'QUEUED', attempt int not null default 0, "
                         + "run_at timestamptz not null default now(), locked_by text, lease_until timestamptz, "
                         + "lease_token uuid, idempotency_key text not null default gen_random_uuid()::text, "
-                        + "error text, started_at timestamptz, finished_at timestamptz)");
+                        + "error text, started_at timestamptz, finished_at timestamptz, "
+                        + "cancel_requested boolean not null default false)");
+        jdbc.execute(
+                "create table run_event (id bigserial primary key, run_id uuid not null references job_run(id), "
+                        + "ts timestamptz not null default now(), type text not null, worker_id text, "
+                        + "attempt int not null, detail text)");
         jobId = UUID.randomUUID();
         jdbc.update(
                 "insert into job_definition(id,name,handler_type,payload_json,timeout_sec,max_attempts,concurrency_limit) "
@@ -88,6 +97,37 @@ class RunTransitionServiceIT {
     }
 
     @Test
+    void concurrentClaimersNeverExceedPerJobConcurrencyLimit() throws Exception {
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<List<ClaimedRun>> first =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return transitions.claimBatch("worker-a", 10);
+                            });
+            Future<List<ClaimedRun>> second =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return transitions.claimBatch("worker-b", 10);
+                            });
+            start.countDown();
+
+            assertThat(first.get().size() + second.get().size()).isEqualTo(1);
+            assertThat(
+                            jdbc.queryForObject(
+                                    "select count(*) from job_run where job_definition_id=? and status='RUNNING'",
+                                    Integer.class,
+                                    jobId))
+                    .isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void expiresLeasesAndMovesExhaustedRunsToDead() {
         UUID retryingRunId = UUID.randomUUID();
         UUID exhaustedRunId = UUID.randomUUID();
@@ -107,6 +147,36 @@ class RunTransitionServiceIT {
         assertThat(attempt(retryingRunId)).isEqualTo(1);
         assertThat(status(exhaustedRunId)).isEqualTo("DEAD");
         assertThat(attempt(exhaustedRunId)).isEqualTo(3);
+    }
+
+    @Test
+    void runningCancellationSignalsWorkerAndCompletesAsCancelled() {
+        ClaimedRun claimed = transitions.claimBatch("worker-1", 1).getFirst();
+
+        assertThat(transitions.cancel(claimed.id())).isTrue();
+        assertThat(transitions.heartbeat(claimed.id(), "worker-1", claimed.leaseToken()))
+                .satisfies(
+                        heartbeat -> {
+                            assertThat(heartbeat.leaseRenewed()).isTrue();
+                            assertThat(heartbeat.cancellationRequested()).isTrue();
+                        });
+        assertThat(transitions.complete(claimed.id(), "worker-1", claimed.leaseToken())).isTrue();
+        assertThat(status(claimed.id())).isEqualTo("CANCELLED");
+        assertThat(
+                        jdbc.queryForObject(
+                                "select count(*) from run_event where run_id=? and type='CANCEL_REQUESTED'",
+                                Integer.class,
+                                claimed.id()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void queuedCancellationCompletesImmediately() {
+        UUID queuedRunId = UUID.randomUUID();
+        jdbc.update("insert into job_run(id,job_definition_id) values (?,?)", queuedRunId, jobId);
+
+        assertThat(transitions.cancel(queuedRunId)).isTrue();
+        assertThat(status(queuedRunId)).isEqualTo("CANCELLED");
     }
 
     private String status(UUID runId) {

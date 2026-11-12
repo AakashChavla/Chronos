@@ -5,6 +5,7 @@ import io.chronos.common.RunStatus;
 import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.domain.ExpiredRun;
+import io.chronos.core.run.domain.HeartbeatResult;
 import io.chronos.core.run.repository.RunTransitionRepository;
 import java.util.List;
 import java.util.UUID;
@@ -34,7 +35,7 @@ public class RunTransitionService {
         return runs.claimBatch(workerId, requestedBatch, workerProperties.leaseDurationMs());
     }
 
-    public boolean heartbeat(UUID runId, String workerId, UUID leaseToken) {
+    public HeartbeatResult heartbeat(UUID runId, String workerId, UUID leaseToken) {
         return runs.heartbeat(runId, workerId, leaseToken, workerProperties.leaseDurationMs());
     }
 
@@ -49,6 +50,7 @@ public class RunTransitionService {
 
     public boolean complete(UUID runId, String workerId, UUID leaseToken) {
         states.require(RunStatus.RUNNING, RunStatus.SUCCEEDED);
+        states.require(RunStatus.RUNNING, RunStatus.CANCELLED);
         return runs.complete(runId, workerId, leaseToken);
     }
 
@@ -75,6 +77,9 @@ public class RunTransitionService {
 
     @Transactional
     public int reapExpired() {
+        if (!runs.acquireReaperLock()) {
+            return 0;
+        }
         int changed = 0;
         for (ExpiredRun run : runs.findExpired(workerProperties.batchSize())) {
             int nextAttempt = run.attempt() + 1;

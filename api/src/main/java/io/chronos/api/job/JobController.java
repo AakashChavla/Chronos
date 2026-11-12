@@ -1,8 +1,9 @@
 package io.chronos.api.job;
 
+import io.chronos.api.error.ApiProblemException;
 import io.chronos.core.job.domain.JobDefinition;
 import io.chronos.core.job.service.JobService;
-import io.chronos.core.job.service.JobService.CreateJobCommand;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -31,12 +32,18 @@ public final class JobController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public JobCreatedResponse create(@RequestBody JobRequest request) {
+    public JobCreatedResponse create(@Valid @RequestBody JobRequest request) {
+        if (request.name() == null || request.name().isBlank()) {
+            throw new ApiProblemException("VALIDATION_422", "Job name is required.");
+        }
+        if (request.handlerType() == null || request.handlerType().isBlank()) {
+            throw new ApiProblemException("VALIDATION_422", "Handler type is required.");
+        }
         return new JobCreatedResponse(jobs.create(request.toCommand()).id());
     }
 
     @PutMapping("/{id}")
-    public void update(@PathVariable("id") UUID id, @RequestBody JobRequest request) {
+    public void update(@PathVariable("id") UUID id, @Valid @RequestBody JobRequest request) {
         jobs.update(id, request.toCommand());
     }
 
@@ -54,29 +61,5 @@ public final class JobController {
                 job.concurrencyLimit(),
                 job.enabled(),
                 job.createdAt());
-    }
-
-    public record JobRequest(
-            String name,
-            String handlerType,
-            String payloadJson,
-            String scheduleCron,
-            String timezone,
-            Integer maxAttempts,
-            Integer timeoutSec,
-            Integer concurrencyLimit,
-            Boolean enabled) {
-        CreateJobCommand toCommand() {
-            return new CreateJobCommand(
-                    name,
-                    handlerType,
-                    payloadJson,
-                    scheduleCron,
-                    timezone,
-                    maxAttempts,
-                    timeoutSec,
-                    concurrencyLimit,
-                    enabled);
-        }
     }
 }

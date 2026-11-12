@@ -63,6 +63,20 @@ public final class JobService {
         return jobs.update(updated);
     }
 
+    public UUID trigger(UUID id) {
+        UUID runId = UUID.randomUUID();
+        if (!jobs.enqueue(id, runId)) {
+            throw new JobNotFoundException(id);
+        }
+        return runId;
+    }
+
+    public static final class JobNotFoundException extends RuntimeException {
+        public JobNotFoundException(UUID id) {
+            super("Job not found: " + id);
+        }
+    }
+
     public record CreateJobCommand(
             String name,
             String handlerType,

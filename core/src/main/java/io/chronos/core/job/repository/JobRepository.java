@@ -13,4 +13,6 @@ public interface JobRepository {
     JobDefinition insert(JobDefinition job);
 
     boolean update(JobDefinition job);
+
+    boolean enqueue(UUID id, UUID runId);
 }

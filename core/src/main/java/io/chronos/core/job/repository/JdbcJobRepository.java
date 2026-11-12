@@ -76,6 +76,16 @@ public class JdbcJobRepository implements JobRepository {
         return changed == 1;
     }
 
+    @Override
+    public boolean enqueue(UUID id, UUID runId) {
+        return jdbc.update(
+                        "insert into job_run(id,job_definition_id) "
+                                + "select ?,id from job_definition where id=? and enabled=true",
+                        runId,
+                        id)
+                == 1;
+    }
+
     private JobDefinition mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new JobDefinition(
                 rs.getObject("id", UUID.class),

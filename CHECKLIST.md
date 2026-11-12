@@ -55,3 +55,16 @@
 - `scripts/demo.sh` — passed on the split deployment: exactly 1,000 runs succeeded at attempt 0.
 - The API paths, ports, and response shapes have not changed in this work slice.
 - Phase 1 remains incomplete: no test-only characterization baseline for all listed scenarios was committed before this partial refactor; the REST controller still mixes endpoints and SQL; duplicate/unknown-job problem handling, DAG/configuration tests, validated properties/profiles, and package-layer enforcement remain. Phase 1 A1/A3/A4/A7 have evidence for this slice; A2/A5/A6/A8 are not fully satisfied.
+
+## Phase 1 continuation: job API boundary slice (2026-11-12)
+
+- Added a validated `JobRequest` record while preserving partial PUT behavior; create requires a nonblank name and handler type.
+- Moved manual job triggering to `JobTriggerController`; enqueue SQL now lives in `JdbcJobRepository` behind `JobService`, and unknown or disabled jobs return a stable `JOB_NOT_FOUND` 404 problem.
+- Added `GlobalExceptionHandler`: blank job name returns `VALIDATION_422`/422, duplicate job name returns `DUPLICATE_NAME`/409, invalid database references are mapped without exposing SQL, and existing routes/response fields are unchanged.
+- Added `spring-boot-starter-validation` to `api` (listed in the implementation plan) and MVC/API problem tests. Added a Testcontainers job trigger integration test.
+- `./mvnw -B -DskipITs -pl api -am test` — passed; 16 tests in selected reactor modules, 0 failures/errors. This did not execute the PostgreSQL IT.
+- `./mvnw -B verify` — failed in `core` before API verification because Testcontainers could not discover Docker Desktop from the Windows Maven process. Setting `DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine` did not resolve discovery.
+- `./mvnw -B -DskipITs verify` — passed after this continuation; all modules compiled, 16 unit tests passed, Spotless passed, and SpotBugs/Find Security Bugs reported no findings.
+- Compose runtime after rebuilding API: health returned `UP`; unknown job trigger returned 404; duplicate job returned 409; blank name returned 422; workers endpoint returned 3 live workers; frontend returned HTTP 200.
+- `bash scripts/check-status-write-boundary.sh` — passed. `docker compose up -d` restored all services. `scripts/demo.sh` — passed: exactly 1,000 runs succeeded at attempt 0.
+- Remaining Phase 1 work: full Testcontainers characterization suite (including workflows/reaper/concurrency) and its pre-refactor commit evidence, split all legacy endpoints out of `ApiController`, move remaining SQL out of it, DAG validation/error tests, validated runtime properties/profiles, package-layer enforcement, and a clean dependency-analyzer report. Phase 1 is not complete.

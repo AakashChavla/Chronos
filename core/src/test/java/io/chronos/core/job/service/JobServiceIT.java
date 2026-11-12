@@ -1,6 +1,7 @@
 package io.chronos.core.job.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.chronos.core.job.domain.JobDefinition;
 import io.chronos.core.job.repository.JdbcJobRepository;
@@ -40,6 +41,8 @@ class JobServiceIT {
                         + "schedule_next_at timestamptz, max_attempts int not null, timeout_sec int not null, "
                         + "concurrency_limit int not null, enabled boolean not null, "
                         + "created_at timestamptz not null default now())");
+        jdbc.execute(
+                "create table job_run (id uuid primary key, job_definition_id uuid references job_definition(id), status text not null default 'QUEUED', run_at timestamptz not null default now())");
         jobs = new JobService(new JdbcJobRepository(jdbc));
     }
 
@@ -67,6 +70,30 @@ class JobServiceIT {
                             assertThat(job.concurrencyLimit()).isEqualTo(8);
                         });
         assertThat(jobs.update(UUID.randomUUID(), updated)).isFalse();
+    }
+
+    @Test
+    void triggeringEnabledJobQueuesRunAndMissingJobReturnsNotFound() {
+        JobDefinition created = jobs.create(command("triggerable", 3, 2));
+
+        UUID runId = jobs.trigger(created.id());
+
+        assertThat(runId).isNotNull();
+        assertThat(
+                        new org.springframework.jdbc.core.JdbcTemplate(
+                                        new org.springframework.jdbc.datasource
+                                                .DriverManagerDataSource(
+                                                POSTGRES.getJdbcUrl(),
+                                                POSTGRES.getUsername(),
+                                                POSTGRES.getPassword()))
+                                .queryForObject(
+                                        "select count(*) from job_run where id=? and job_definition_id=?",
+                                        Integer.class,
+                                        runId,
+                                        created.id()))
+                .isEqualTo(1);
+        assertThatThrownBy(() -> jobs.trigger(UUID.randomUUID()))
+                .isInstanceOf(JobService.JobNotFoundException.class);
     }
 
     private static JobService.CreateJobCommand command(String name, int maxAttempts, int limit) {

@@ -38,14 +38,6 @@ public class ApiController {
 
     public record WorkflowRequest(String name, List<Step> steps) {}
 
-    @PostMapping("/jobs/{id}/trigger")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public Map<String, Object> trigger(@PathVariable("id") UUID id) {
-        UUID run = UUID.randomUUID();
-        jdbc.update("insert into job_run(id,job_definition_id) values(?,?)", run, id);
-        return Map.of("runId", run);
-    }
-
     @PostMapping("/workflows")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> workflow(@RequestBody WorkflowRequest w) {

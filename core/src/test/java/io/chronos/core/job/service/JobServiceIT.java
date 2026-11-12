@@ -33,7 +33,7 @@ class JobServiceIT {
         properties.setProperty("options", "-c TimeZone=UTC");
         dataSource.setConnectionProperties(properties);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("drop table if exists job_definition");
+        jdbc.execute("drop table if exists job_run, job_definition cascade");
         jdbc.execute(
                 "create table job_definition ("
                         + "id uuid primary key, name text unique not null, handler_type text not null, "

@@ -66,5 +66,19 @@
 - `./mvnw -B verify` — failed in `core` before API verification because Testcontainers could not discover Docker Desktop from the Windows Maven process. Setting `DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine` did not resolve discovery.
 - `./mvnw -B -DskipITs verify` — passed after this continuation; all modules compiled, 16 unit tests passed, Spotless passed, and SpotBugs/Find Security Bugs reported no findings.
 - Compose runtime after rebuilding API: health returned `UP`; unknown job trigger returned 404; duplicate job returned 409; blank name returned 422; workers endpoint returned 3 live workers; frontend returned HTTP 200.
-- `bash scripts/check-status-write-boundary.sh` — passed. `docker compose up -d` restored all services. `scripts/demo.sh` — passed: exactly 1,000 runs succeeded at attempt 0.
+- `bash scripts/check-status-write-boundary.sh` (Git Bash) — passed. `docker compose up -d` restored all services. `scripts/demo.sh` — passed: exactly 1,000 runs succeeded at attempt 0.
 - Remaining Phase 1 work: full Testcontainers characterization suite (including workflows/reaper/concurrency) and its pre-refactor commit evidence, split all legacy endpoints out of `ApiController`, move remaining SQL out of it, DAG validation/error tests, validated runtime properties/profiles, package-layer enforcement, and a clean dependency-analyzer report. Phase 1 is not complete.
+
+## Phase 1 continuation: workflow service and DAG validation (2026-11-12)
+
+- Added `DagValidator` and table-driven unit cases for null dependencies, duplicate keys, unknown dependency, self-loop, cycle, diamond, and empty graph (7 tests).
+- Moved workflow create and trigger persistence into `WorkflowService` and `JdbcWorkflowRepository`; moved the HTTP operations to `WorkflowController`. Added request records and stable `WORKFLOW_CYCLE`, `INVALID_WORKFLOW`, and `WORKFLOW_NOT_FOUND` problem responses. Cycle errors include the offending `stepKey`.
+- Added PostgreSQL Testcontainers workflow create/trigger integration tests. Both workflow integration tests passed during `./mvnw -B verify`.
+- Compose smoke testing caught a startup failure because Spring AOP could not proxy final workflow repository/service classes. Removed `final` from the proxied classes. After rebuilding, the API started and health returned `UP`.
+- `./mvnw -B -DskipITs -pl api -am test` — passed; 25 unit tests across common/core/api, 0 failures/errors (integration tests excluded).
+- `./mvnw -B verify` — passed on the current code; all modules compiled, unit and Testcontainers integration tests passed, Spotless passed, SpotBugs + Find Security Bugs reported zero findings, and Java 21/dependency convergence passed. The first full run exposed a `JobServiceIT` teardown bug (dropping a referenced table); fixed the fixture and reran successfully.
+- `docker compose config --quiet` — passed. `bash scripts/check-status-write-boundary.sh` (Git Bash) — passed.
+- Live API probes: health `UP`; valid workflow create returned the existing `{id}` shape; trigger returned `{workflowRunId}`; cyclic DAG returned 422 `WORKFLOW_CYCLE` with `stepKey=extract`; unknown workflow trigger returned 404 `WORKFLOW_NOT_FOUND`; `/api/workers` showed 3 current workers; frontend returned HTTP 200.
+- `scripts/demo.sh` — passed against the workflow-enabled API: exactly 1,000 runs succeeded at attempt 0.
+- No successful API path or route changed. Error responses now use problem+json for these workflow failures.
+- Phase 1 remains incomplete. `ApiController` still contains SQL for runs/replay/workers/SSE; not all endpoints have feature controllers/services; configuration properties and profiles, layer tests, full characterization coverage and pre-refactor test commit evidence are missing; The full Testcontainers suite is runnable and passed here, though the broader concurrency/reaper acceptance coverage is still missing; dependency analysis still has warnings.

@@ -1,6 +1,8 @@
 package io.chronos.api.error;
 
 import io.chronos.core.job.service.JobService.JobNotFoundException;
+import io.chronos.core.workflow.service.DagValidationException;
+import io.chronos.core.workflow.service.WorkflowService.WorkflowNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -15,6 +17,22 @@ public final class GlobalExceptionHandler {
     @ExceptionHandler(JobNotFoundException.class)
     public ResponseEntity<ProblemDetail> missingJob(JobNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND", exception.getMessage());
+    }
+
+    @ExceptionHandler(DagValidationException.class)
+    public ResponseEntity<ProblemDetail> invalidWorkflow(DagValidationException exception) {
+        ProblemDetail body =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        exception.getMessage() + " Offending step: " + exception.stepKey() + ".");
+        body.setProperty("code", exception.code());
+        body.setProperty("stepKey", exception.stepKey());
+        return ResponseEntity.unprocessableEntity().body(body);
+    }
+
+    @ExceptionHandler(WorkflowNotFoundException.class)
+    public ResponseEntity<ProblemDetail> missingWorkflow(WorkflowNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "WORKFLOW_NOT_FOUND", exception.getMessage());
     }
 
     @ExceptionHandler(ApiProblemException.class)

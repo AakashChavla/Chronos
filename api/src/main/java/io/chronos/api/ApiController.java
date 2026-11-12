@@ -1,12 +1,8 @@
 package io.chronos.api;
 
 import io.chronos.core.run.service.RunTransitionService;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -16,7 +12,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -32,65 +27,6 @@ public class ApiController {
     public ApiController(JdbcTemplate jdbc, RunTransitionService transitions) {
         this.jdbc = jdbc;
         this.transitions = transitions;
-    }
-
-    public record Step(String stepKey, UUID jobDefinitionId, List<String> dependsOn) {}
-
-    public record WorkflowRequest(String name, List<Step> steps) {}
-
-    @PostMapping("/workflows")
-    @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> workflow(@RequestBody WorkflowRequest w) {
-        validate(w.steps());
-        UUID id = UUID.randomUUID();
-        jdbc.update("insert into workflow(id,name) values(?,?)", id, w.name());
-        for (Step s : w.steps())
-            jdbc.update(
-                    "insert into workflow_step(workflow_id,step_key,job_definition_id,depends_on) values(?,?,?,?::text[])",
-                    id,
-                    s.stepKey(),
-                    s.jobDefinitionId(),
-                    "{"
-                            + String.join(",", Optional.ofNullable(s.dependsOn()).orElse(List.of()))
-                            + "}");
-        return Map.of("id", id);
-    }
-
-    private void validate(List<Step> ss) {
-        Set<String> keys = new HashSet<>();
-        for (Step s : ss)
-            if (!keys.add(s.stepKey())) throw new Unprocessable("duplicate step " + s.stepKey());
-        for (Step s : ss)
-            for (String d : Optional.ofNullable(s.dependsOn()).orElse(List.of()))
-                if (!keys.contains(d))
-                    throw new Unprocessable("unknown dependency " + d + " on step " + s.stepKey());
-        Map<String, Integer> c = new HashMap<>();
-        for (Step s : ss) visit(s.stepKey(), ss, c);
-    }
-
-    private void visit(String k, List<Step> s, Map<String, Integer> c) {
-        if (c.getOrDefault(k, 0) == 1) throw new Unprocessable("cycle at step " + k);
-        if (c.getOrDefault(k, 0) == 2) return;
-        c.put(k, 1);
-        s.stream()
-                .filter(x -> x.stepKey().equals(k))
-                .findFirst()
-                .orElseThrow()
-                .dependsOn()
-                .forEach(d -> visit(d, s, c));
-        c.put(k, 2);
-    }
-
-    @PostMapping("/workflows/{id}/trigger")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public Map<String, Object> triggerWorkflow(@PathVariable("id") UUID id) {
-        UUID run = UUID.randomUUID();
-        jdbc.update("insert into workflow_run(id,workflow_id) values(?,?)", run, id);
-        jdbc.update(
-                "insert into job_run(job_definition_id,workflow_run_id,step_key) select job_definition_id,?,step_key from workflow_step where workflow_id=? and cardinality(depends_on)=0",
-                run,
-                id);
-        return Map.of("workflowRunId", run);
     }
 
     @GetMapping("/runs")

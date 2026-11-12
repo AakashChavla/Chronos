@@ -24,3 +24,8 @@ None planned. Existing Spring validation and test dependencies will be reused.
 
 ## Compatibility
 Keep all current paths and response shapes. Error responses intentionally become stable `application/problem+json` for the documented failure cases.
+
+## Plan update
+- Add spring-boot-starter-validation to the API module so record request constraints are enforced by Spring MVC (required by Phase 1 Bean Validation acceptance).
+- This slice adds job-trigger repository/service support and stable problem mapping. The remaining controller split and DAG integration move to the next continuation after the current code is verified.
+

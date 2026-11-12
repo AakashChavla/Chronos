@@ -14,6 +14,14 @@ Make worker execution capacity bounded and safe under lease loss, shutdown, canc
 6. `core/src/test/**`, `worker/src/test/**`, `api/src/test/**`: RetryPolicy unit/property tests, claim/reaper/lease-fencing Testcontainers tests, cancellation/timeout/capacity/lifecycle tests with deterministic clocks or controllable handlers, and atomic run-event assertions.
 7. `CHECKLIST.md`: test each Phase 2 acceptance criterion and state remaining chaos/load limitations without implying unrun evidence.
 
+## Phase 2 completion slice (this continuation)
+
+1. `worker/src/main/java/io/chronos/worker/WorkerService.java` and `core/src/main/java/io/chronos/core/run/**`: track in-flight executions, jitter polling by +/-20%, implement `SmartLifecycle` shutdown with configured grace, and lease-fenced release without incrementing attempts.
+2. Worker timeout path: interrupt at timeout, report handlers still alive after the five-second grace, keep the worker capacity slot occupied until the handler exits, and stop heartbeating so the reaper can recover the run without allowing a late result write.
+3. Add a `NonRetryableException` handler outcome that transitions directly to FAILED, plus tests for state and event behavior.
+4. Tests: unit tests for poll jitter bounds/lifecycle waiting/capacity, Testcontainers for shutdown release and terminal non-retryable failure. Do not claim SIGKILL, SIGSTOP, or cancellation latency criteria without running them.
+5. No new dependency planned. Use Java concurrency primitives and existing logging; zombie metric export is deferred unless the worker app has a scrapeable metrics endpoint without adding a REST server.
+
 ## Dependency changes
 
 Add `net.jqwik:jqwik` as a test dependency in `core` for the explicitly required transition and retry policy properties. Version `1.9.2` is pinned in this plan. No new runtime dependency is planned.

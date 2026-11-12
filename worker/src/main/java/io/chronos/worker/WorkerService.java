@@ -3,6 +3,7 @@ package io.chronos.worker;
 import io.chronos.common.RunContext;
 import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
+import io.chronos.core.run.service.RetryPolicy;
 import io.chronos.core.run.service.RunTransitionService;
 import io.chronos.handlers.BuiltinHandlers;
 import io.chronos.handlers.JobHandler;
@@ -15,6 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,6 +37,9 @@ public class WorkerService {
     private final RunTransitionService transitions;
     private final String worker;
     private final Map<String, JobHandler> handlers;
+    private final RetryPolicy retryPolicy;
+    private final Semaphore capacity;
+    private final long heartbeatIntervalMs;
     private final ScheduledExecutorService heartbeats =
             Executors.newSingleThreadScheduledExecutor();
 
@@ -46,6 +51,9 @@ public class WorkerService {
         this.jdbc = jdbc;
         this.transitions = transitions;
         this.worker = properties.worker().id();
+        this.retryPolicy = new RetryPolicy();
+        this.capacity = new Semaphore(properties.worker().maxConcurrency());
+        this.heartbeatIntervalMs = properties.worker().heartbeatIntervalMs();
         this.handlers = new HashMap<>();
         builtins.all().forEach(h -> handlers.put(h.type(), h));
     }
@@ -56,8 +64,27 @@ public class WorkerService {
                 "insert into worker_node(id,heartbeat_at) values (?,now()) "
                         + "on conflict(id) do update set heartbeat_at=now()",
                 worker);
-        for (ClaimedRun run : transitions.claimBatch(worker)) {
-            Thread.startVirtualThread(() -> execute(run));
+        int slots = capacity.availablePermits();
+        if (slots == 0 || !capacity.tryAcquire(slots)) {
+            return;
+        }
+        java.util.List<ClaimedRun> claimed;
+        try {
+            claimed = transitions.claimBatch(worker, slots);
+        } catch (RuntimeException exception) {
+            capacity.release(slots);
+            throw exception;
+        }
+        capacity.release(slots - claimed.size());
+        for (ClaimedRun run : claimed) {
+            Thread.startVirtualThread(
+                    () -> {
+                        try {
+                            execute(run);
+                        } finally {
+                            capacity.release();
+                        }
+                    });
         }
     }
 
@@ -82,10 +109,19 @@ public class WorkerService {
                                         worker);
                             }
                         },
-                        5,
-                        5,
-                        TimeUnit.SECONDS);
+                        heartbeatIntervalMs,
+                        heartbeatIntervalMs,
+                        TimeUnit.MILLISECONDS);
         try {
+            if (!transitions.start(run.id(), worker, run.leaseToken())) {
+                leaseLost.set(true);
+                LOGGER.warn(
+                        "Worker claim expired before start for runId={} jobId={} workerId={}",
+                        run.id(),
+                        run.jobDefinitionId(),
+                        worker);
+                return;
+            }
             JobHandler handler = handlers.get(run.handlerType());
             if (handler == null) {
                 throw new IllegalArgumentException("unknown handler: " + run.handlerType());
@@ -128,10 +164,13 @@ public class WorkerService {
             if (leaseLost.get()) {
                 return;
             }
-            int nextAttempt = run.attempt() + 1;
             double delay =
-                    Math.min(300, Math.pow(2, nextAttempt))
-                            + ThreadLocalRandom.current().nextDouble(0, 1);
+                    retryPolicy.delaySeconds(
+                            run.attempt(),
+                            run.backoffBaseSec(),
+                            run.backoffMaxSec(),
+                            run.backoffJitter(),
+                            ThreadLocalRandom.current()::nextDouble);
             String message =
                     Optional.ofNullable(error.getCause())
                             .map(Throwable::getMessage)

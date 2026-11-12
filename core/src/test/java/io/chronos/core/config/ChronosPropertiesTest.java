@@ -17,8 +17,11 @@ class ChronosPropertiesTest {
                     ChronosProperties properties = context.getBean(ChronosProperties.class);
                     assertThat(properties.worker().id()).isEqualTo("local");
                     assertThat(properties.worker().pollIntervalMs()).isEqualTo(1000);
-                    assertThat(properties.worker().leaseDurationMs()).isEqualTo(15000);
+                    assertThat(properties.worker().leaseDurationMs()).isEqualTo(30000);
                     assertThat(properties.worker().batchSize()).isEqualTo(10);
+                    assertThat(properties.worker().maxConcurrency()).isEqualTo(20);
+                    assertThat(properties.worker().shutdownGraceMs()).isEqualTo(30000);
+                    assertThat(properties.worker().heartbeatIntervalMs()).isEqualTo(10000);
                     assertThat(properties.scheduler().pollIntervalMs()).isEqualTo(1000);
                 });
     }

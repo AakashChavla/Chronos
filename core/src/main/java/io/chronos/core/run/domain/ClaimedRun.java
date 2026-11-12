@@ -11,4 +11,8 @@ public record ClaimedRun(
         int timeoutSec,
         int maxAttempts,
         int attempt,
+        double backoffBaseSec,
+        double backoffMaxSec,
+        double backoffJitter,
+        int priority,
         UUID leaseToken) {}

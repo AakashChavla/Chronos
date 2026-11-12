@@ -25,14 +25,26 @@ public class RunTransitionService {
     }
 
     @Transactional
-    public List<ClaimedRun> claimBatch(String workerId) {
+    public List<ClaimedRun> claimBatch(String workerId, int availableSlots) {
         states.require(RunStatus.QUEUED, RunStatus.RUNNING);
-        return runs.claimBatch(
-                workerId, workerProperties.batchSize(), workerProperties.leaseDurationMs());
+        int requestedBatch = Math.min(availableSlots, workerProperties.batchSize());
+        if (requestedBatch <= 0) {
+            return List.of();
+        }
+        return runs.claimBatch(workerId, requestedBatch, workerProperties.leaseDurationMs());
     }
 
     public boolean heartbeat(UUID runId, String workerId, UUID leaseToken) {
-        return runs.heartbeat(runId, workerId, leaseToken);
+        return runs.heartbeat(runId, workerId, leaseToken, workerProperties.leaseDurationMs());
+    }
+
+    public boolean start(UUID runId, String workerId, UUID leaseToken) {
+        return runs.start(runId, workerId, leaseToken);
+    }
+
+    @Transactional
+    public void recordEvent(UUID runId, String type, String workerId, int attempt, String detail) {
+        runs.addRunEvent(runId, type, workerId, attempt, detail);
     }
 
     public boolean complete(UUID runId, String workerId, UUID leaseToken) {

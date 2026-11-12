@@ -16,8 +16,11 @@ public record ChronosProperties(
             @NotBlank @DefaultValue("local") String id,
             @DefaultValue("true") boolean enabled,
             @Min(100) @Max(60000) @DefaultValue("1000") long pollIntervalMs,
-            @Min(1000) @Max(300000) @DefaultValue("15000") long leaseDurationMs,
-            @Min(1) @Max(1000) @DefaultValue("10") int batchSize) {}
+            @Min(1000) @Max(300000) @DefaultValue("30000") long leaseDurationMs,
+            @Min(1) @Max(1000) @DefaultValue("10") int batchSize,
+            @Min(1) @Max(1000) @DefaultValue("20") int maxConcurrency,
+            @Min(100) @Max(300000) @DefaultValue("30000") long shutdownGraceMs,
+            @Min(100) @Max(60000) @DefaultValue("10000") long heartbeatIntervalMs) {}
 
     public record Scheduler(
             @DefaultValue("true") boolean enabled,

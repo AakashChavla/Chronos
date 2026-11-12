@@ -42,7 +42,9 @@ class RunTransitionServiceIT {
         jdbc.execute(
                 "create table job_definition (id uuid primary key, name text not null, handler_type text not null, "
                         + "payload_json jsonb not null, timeout_sec int not null, max_attempts int not null, "
-                        + "concurrency_limit int not null)");
+                        + "concurrency_limit int not null, enabled boolean not null default true, "
+                        + "priority smallint not null default 0, backoff_base_sec float8 not null default 1, "
+                        + "backoff_max_sec float8 not null default 300, backoff_jitter float8 not null default 1)");
         jdbc.execute(
                 "create table job_run (id uuid primary key, job_definition_id uuid not null references job_definition(id), "
                         + "status text not null default 'QUEUED', attempt int not null default 0, "
@@ -66,22 +68,23 @@ class RunTransitionServiceIT {
                         new JdbcRunTransitionRepository(jdbc),
                         new RunStateMachine(),
                         new ChronosProperties(
-                                new ChronosProperties.Worker("local", true, 1000, 15000, 10),
+                                new ChronosProperties.Worker(
+                                        "local", true, 1000, 30000, 10, 20, 30000, 10000),
                                 new ChronosProperties.Scheduler(true, 1000)));
     }
 
     @Test
     void enforcesPerJobConcurrencyAndFencesStaleWorkerWrites() {
-        List<ClaimedRun> firstBatch = transitions.claimBatch("worker-1");
+        List<ClaimedRun> firstBatch = transitions.claimBatch("worker-1", 10);
         assertThat(firstBatch).hasSize(1);
 
-        assertThat(transitions.claimBatch("worker-2")).isEmpty();
+        assertThat(transitions.claimBatch("worker-2", 10)).isEmpty();
         ClaimedRun claimed = firstBatch.getFirst();
         assertThat(transitions.complete(claimed.id(), "worker-2", claimed.leaseToken())).isFalse();
         assertThat(transitions.complete(claimed.id(), "worker-1", UUID.randomUUID())).isFalse();
         assertThat(transitions.complete(claimed.id(), "worker-1", claimed.leaseToken())).isTrue();
 
-        assertThat(transitions.claimBatch("worker-2")).hasSize(1);
+        assertThat(transitions.claimBatch("worker-2", 10)).hasSize(1);
     }
 
     @Test

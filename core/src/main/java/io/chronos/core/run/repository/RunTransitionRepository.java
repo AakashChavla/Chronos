@@ -9,7 +9,11 @@ import java.util.UUID;
 public interface RunTransitionRepository {
     List<ClaimedRun> claimBatch(String workerId, int batchSize, long leaseDurationMs);
 
-    boolean heartbeat(UUID runId, String workerId, UUID leaseToken);
+    boolean heartbeat(UUID runId, String workerId, UUID leaseToken, long leaseDurationMs);
+
+    boolean start(UUID runId, String workerId, UUID leaseToken);
+
+    void addRunEvent(UUID runId, String type, String workerId, int attempt, String detail);
 
     boolean complete(UUID runId, String workerId, UUID leaseToken);
 

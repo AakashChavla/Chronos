@@ -18,12 +18,14 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
 
     @Override
     public List<ClaimedRun> claimBatch(String workerId, int batchSize, long leaseDurationMs) {
+        // Lock eligible job rows before counting RUNNING rows so concurrent claimers serialize per
+        // job.
         return jdbc.query(
                 "with locked_jobs as materialized ("
-                        + "select j.id,j.concurrency_limit from job_definition j "
-                        + "where exists (select 1 from job_run q where q.job_definition_id=j.id "
+                        + "select j.id,j.concurrency_limit,j.priority from job_definition j "
+                        + "where j.enabled and exists (select 1 from job_run q where q.job_definition_id=j.id "
                         + "and q.status='QUEUED' and q.run_at<=now()) "
-                        + "order by j.id for update skip locked), "
+                        + "order by j.priority desc,j.id for update skip locked), "
                         + "active as (select job_definition_id,count(*) n from job_run "
                         + "where status='RUNNING' group by job_definition_id), "
                         + "queued as (select r.id,r.job_definition_id,row_number() over "
@@ -34,12 +36,13 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
                         + "on j.id=q.job_definition_id left join active a "
                         + "on a.job_definition_id=q.job_definition_id "
                         + "where q.n<=j.concurrency_limit-coalesce(a.n,0) "
-                        + "order by q.id limit ?) "
+                        + "order by j.priority desc,q.n,q.id limit ?) "
                         + "update job_run r set status='RUNNING',locked_by=?,lease_token=gen_random_uuid(),"
                         + "lease_until=now()+(? * interval '1 millisecond'),started_at=now() "
                         + "from picked p,job_definition j where r.id=p.id and j.id=r.job_definition_id "
                         + "returning r.id,r.job_definition_id,r.idempotency_key,j.payload_json::text "
-                        + "as payload_json,j.handler_type,j.timeout_sec,j.max_attempts,r.attempt,r.lease_token",
+                        + "as payload_json,j.handler_type,j.timeout_sec,j.max_attempts,r.attempt,"
+                        + "j.backoff_base_sec,j.backoff_max_sec,j.backoff_jitter,j.priority,r.lease_token",
                 (rs, rowNum) ->
                         new ClaimedRun(
                                 rs.getObject("id", UUID.class),
@@ -50,6 +53,10 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
                                 rs.getInt("timeout_sec"),
                                 rs.getInt("max_attempts"),
                                 rs.getInt("attempt"),
+                                rs.getDouble("backoff_base_sec"),
+                                rs.getDouble("backoff_max_sec"),
+                                rs.getDouble("backoff_jitter"),
+                                rs.getInt("priority"),
                                 rs.getObject("lease_token", UUID.class)),
                 batchSize,
                 workerId,
@@ -57,15 +64,40 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
-    public boolean heartbeat(UUID runId, String workerId, UUID leaseToken) {
+    public boolean heartbeat(UUID runId, String workerId, UUID leaseToken, long leaseDurationMs) {
         return jdbc.update(
-                        "update job_run set lease_until=now()+interval '15 seconds' "
+                        "update job_run set lease_until=now()+(? * interval '1 millisecond') "
+                                + "where id=? and status='RUNNING' and locked_by=? "
+                                + "and lease_token=? and lease_until>now()",
+                        leaseDurationMs,
+                        runId,
+                        workerId,
+                        leaseToken)
+                == 1;
+    }
+
+    @Override
+    public boolean start(UUID runId, String workerId, UUID leaseToken) {
+        return jdbc.update(
+                        "insert into run_event(run_id,type,worker_id,attempt,detail) "
+                                + "select id,'STARTED',locked_by,attempt,null from job_run "
                                 + "where id=? and status='RUNNING' and locked_by=? "
                                 + "and lease_token=? and lease_until>now()",
                         runId,
                         workerId,
                         leaseToken)
                 == 1;
+    }
+
+    @Override
+    public void addRunEvent(UUID runId, String type, String workerId, int attempt, String detail) {
+        jdbc.update(
+                "insert into run_event(run_id,type,worker_id,attempt,detail) values (?,?,?,?,?)",
+                runId,
+                type,
+                workerId,
+                attempt,
+                detail);
     }
 
     @Override

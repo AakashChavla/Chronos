@@ -27,16 +27,16 @@ class RunTransitionServiceTest {
 
     @Test
     void delegatesBatchClaimAfterValidatingQueuedToRunning() {
-        transitions.claimBatch("worker-1");
+        transitions.claimBatch("worker-1", 10);
 
-        verify(repository).claimBatch("worker-1", 10, 15000);
+        verify(repository).claimBatch("worker-1", 10, 30000);
     }
 
     @Test
     void delegatesHeartbeatAndCompletion() {
         UUID runId = UUID.randomUUID();
         UUID token = UUID.randomUUID();
-        when(repository.heartbeat(runId, "worker-1", token)).thenReturn(true);
+        when(repository.heartbeat(runId, "worker-1", token, 30000)).thenReturn(true);
         when(repository.complete(runId, "worker-1", token)).thenReturn(true);
 
         assertThat(transitions.heartbeat(runId, "worker-1", token)).isTrue();
@@ -96,7 +96,7 @@ class RunTransitionServiceTest {
 
     private ChronosProperties defaults() {
         return new ChronosProperties(
-                new ChronosProperties.Worker("local", true, 1000, 15000, 10),
+                new ChronosProperties.Worker("local", true, 1000, 30000, 10, 20, 30000, 10000),
                 new ChronosProperties.Scheduler(true, 1000));
     }
 }

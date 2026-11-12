@@ -7,6 +7,7 @@ chronos:
     enabled: false
     poll-interval-ms: 100
     lease-duration-ms: 2000
+    heartbeat-interval-ms: 1000
     batch-size: 1
   scheduler:
     enabled: false

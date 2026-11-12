@@ -6,6 +6,7 @@ chronos:
   worker:
     poll-interval-ms: 1000
     lease-duration-ms: 30000
+    heartbeat-interval-ms: 10000
     batch-size: 20
   scheduler:
     poll-interval-ms: 1000

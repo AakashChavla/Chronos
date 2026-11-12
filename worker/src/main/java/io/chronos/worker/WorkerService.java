@@ -1,6 +1,7 @@
 package io.chronos.worker;
 
 import io.chronos.common.RunContext;
+import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.service.RunTransitionService;
 import io.chronos.handlers.BuiltinHandlers;
@@ -20,14 +21,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "chronos.worker-enabled", havingValue = "true")
+@ConditionalOnProperty(name = "chronos.worker.enabled", havingValue = "true")
 public class WorkerService {
     private static final Logger LOGGER = LoggerFactory.getLogger(WorkerService.class);
 
@@ -41,16 +41,16 @@ public class WorkerService {
     public WorkerService(
             JdbcTemplate jdbc,
             RunTransitionService transitions,
-            @Value("${chronos.worker-id}") String worker,
+            ChronosProperties properties,
             BuiltinHandlers builtins) {
         this.jdbc = jdbc;
         this.transitions = transitions;
-        this.worker = worker;
+        this.worker = properties.worker().id();
         this.handlers = new HashMap<>();
         builtins.all().forEach(h -> handlers.put(h.type(), h));
     }
 
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelayString = "${chronos.worker.poll-interval-ms:1000}")
     public void poll() {
         jdbc.update(
                 "insert into worker_node(id,heartbeat_at) values (?,now()) "

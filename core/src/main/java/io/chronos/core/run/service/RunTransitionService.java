@@ -2,6 +2,7 @@ package io.chronos.core.run.service;
 
 import io.chronos.common.RunStateMachine;
 import io.chronos.common.RunStatus;
+import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.domain.ExpiredRun;
 import io.chronos.core.run.repository.RunTransitionRepository;
@@ -12,20 +13,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RunTransitionService {
-    private static final int CLAIM_BATCH_SIZE = 10;
-
     private final RunTransitionRepository runs;
     private final RunStateMachine states;
+    private final ChronosProperties.Worker workerProperties;
 
-    public RunTransitionService(RunTransitionRepository runs, RunStateMachine states) {
+    public RunTransitionService(
+            RunTransitionRepository runs, RunStateMachine states, ChronosProperties properties) {
         this.runs = runs;
         this.states = states;
+        this.workerProperties = properties.worker();
     }
 
     @Transactional
     public List<ClaimedRun> claimBatch(String workerId) {
         states.require(RunStatus.QUEUED, RunStatus.RUNNING);
-        return runs.claimBatch(workerId, CLAIM_BATCH_SIZE);
+        return runs.claimBatch(
+                workerId, workerProperties.batchSize(), workerProperties.leaseDurationMs());
     }
 
     public boolean heartbeat(UUID runId, String workerId, UUID leaseToken) {
@@ -61,7 +64,7 @@ public class RunTransitionService {
     @Transactional
     public int reapExpired() {
         int changed = 0;
-        for (ExpiredRun run : runs.findExpired(CLAIM_BATCH_SIZE)) {
+        for (ExpiredRun run : runs.findExpired(workerProperties.batchSize())) {
             int nextAttempt = run.attempt() + 1;
             RunStatus nextStatus =
                     nextAttempt >= run.maxAttempts() ? RunStatus.DEAD : RunStatus.QUEUED;

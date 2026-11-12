@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface RunTransitionRepository {
-    List<ClaimedRun> claimBatch(String workerId, int batchSize);
+    List<ClaimedRun> claimBatch(String workerId, int batchSize, long leaseDurationMs);
 
     boolean heartbeat(UUID runId, String workerId, UUID leaseToken);
 

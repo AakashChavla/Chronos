@@ -1,5 +1,6 @@
 package io.chronos.api.error;
 
+import io.chronos.api.run.RunService.RunActionException;
 import io.chronos.core.job.service.JobService.JobNotFoundException;
 import io.chronos.core.workflow.service.DagValidationException;
 import io.chronos.core.workflow.service.WorkflowService.WorkflowNotFoundException;
@@ -33,6 +34,15 @@ public final class GlobalExceptionHandler {
     @ExceptionHandler(WorkflowNotFoundException.class)
     public ResponseEntity<ProblemDetail> missingWorkflow(WorkflowNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "WORKFLOW_NOT_FOUND", exception.getMessage());
+    }
+
+    @ExceptionHandler(RunActionException.class)
+    public ResponseEntity<ProblemDetail> runAction(RunActionException exception) {
+        HttpStatus status =
+                exception.code().equals("RUN_NOT_REPLAYABLE")
+                        ? HttpStatus.CONFLICT
+                        : HttpStatus.UNPROCESSABLE_ENTITY;
+        return problem(status, exception.code(), exception.getMessage());
     }
 
     @ExceptionHandler(ApiProblemException.class)

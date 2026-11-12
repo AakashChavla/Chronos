@@ -6,4 +6,7 @@ spring:
     username: '${DB_USER:chronos}'
     password: '${DB_PASSWORD:chronos}'
 chronos:
-  scheduler-enabled: true
+  worker:
+    enabled: false
+  scheduler:
+    enabled: true

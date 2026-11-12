@@ -17,7 +17,7 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
     }
 
     @Override
-    public List<ClaimedRun> claimBatch(String workerId, int batchSize) {
+    public List<ClaimedRun> claimBatch(String workerId, int batchSize, long leaseDurationMs) {
         return jdbc.query(
                 "with locked_jobs as materialized ("
                         + "select j.id,j.concurrency_limit from job_definition j "
@@ -36,7 +36,7 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
                         + "where q.n<=j.concurrency_limit-coalesce(a.n,0) "
                         + "order by q.id limit ?) "
                         + "update job_run r set status='RUNNING',locked_by=?,lease_token=gen_random_uuid(),"
-                        + "lease_until=now()+interval '15 seconds',started_at=now() "
+                        + "lease_until=now()+(? * interval '1 millisecond'),started_at=now() "
                         + "from picked p,job_definition j where r.id=p.id and j.id=r.job_definition_id "
                         + "returning r.id,r.job_definition_id,r.idempotency_key,j.payload_json::text "
                         + "as payload_json,j.handler_type,j.timeout_sec,j.max_attempts,r.attempt,r.lease_token",
@@ -52,7 +52,8 @@ public class JdbcRunTransitionRepository implements RunTransitionRepository {
                                 rs.getInt("attempt"),
                                 rs.getObject("lease_token", UUID.class)),
                 batchSize,
-                workerId);
+                workerId,
+                leaseDurationMs);
     }
 
     @Override

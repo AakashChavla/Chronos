@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+chronos:
+  worker:
+    poll-interval-ms: 1000
+    lease-duration-ms: 30000
+    batch-size: 20
+  scheduler:
+    poll-interval-ms: 1000

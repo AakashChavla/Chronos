@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import io.chronos.common.RunStateMachine;
 import io.chronos.common.RunStatus;
+import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ExpiredRun;
 import io.chronos.core.run.repository.RunTransitionRepository;
 import java.util.List;
@@ -21,14 +22,14 @@ class RunTransitionServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(RunTransitionRepository.class);
-        transitions = new RunTransitionService(repository, new RunStateMachine());
+        transitions = new RunTransitionService(repository, new RunStateMachine(), defaults());
     }
 
     @Test
     void delegatesBatchClaimAfterValidatingQueuedToRunning() {
         transitions.claimBatch("worker-1");
 
-        verify(repository).claimBatch("worker-1", 10);
+        verify(repository).claimBatch("worker-1", 10, 15000);
     }
 
     @Test
@@ -91,5 +92,11 @@ class RunTransitionServiceTest {
         when(repository.skip(runId)).thenReturn(true);
 
         assertThat(transitions.skipFailedWorkflowSteps()).isEqualTo(1);
+    }
+
+    private ChronosProperties defaults() {
+        return new ChronosProperties(
+                new ChronosProperties.Worker("local", true, 1000, 15000, 10),
+                new ChronosProperties.Scheduler(true, 1000));
     }
 }

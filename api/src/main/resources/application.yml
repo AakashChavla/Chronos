@@ -11,6 +11,8 @@ management:
       exposure:
         include: health,info,prometheus
 chronos:
-  worker-id: '${WORKER_ID:${HOSTNAME:local}}'
-  worker-enabled: '${WORKER_ENABLED:false}'
-  scheduler-enabled: '${SCHEDULER_ENABLED:true}'
+  worker:
+    id: '${WORKER_ID:${HOSTNAME:local}}'
+    enabled: false
+  scheduler:
+    enabled: true

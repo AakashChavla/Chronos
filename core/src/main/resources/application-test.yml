@@ -1,0 +1,13 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+chronos:
+  worker:
+    enabled: false
+    poll-interval-ms: 100
+    lease-duration-ms: 2000
+    batch-size: 1
+  scheduler:
+    enabled: false
+    poll-interval-ms: 100

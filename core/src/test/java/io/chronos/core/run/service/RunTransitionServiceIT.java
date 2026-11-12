@@ -3,6 +3,7 @@ package io.chronos.core.run.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.chronos.common.RunStateMachine;
+import io.chronos.core.config.ChronosProperties;
 import io.chronos.core.run.domain.ClaimedRun;
 import io.chronos.core.run.repository.JdbcRunTransitionRepository;
 import java.util.List;
@@ -62,7 +63,11 @@ class RunTransitionServiceIT {
                 jobId);
         transitions =
                 new RunTransitionService(
-                        new JdbcRunTransitionRepository(jdbc), new RunStateMachine());
+                        new JdbcRunTransitionRepository(jdbc),
+                        new RunStateMachine(),
+                        new ChronosProperties(
+                                new ChronosProperties.Worker("local", true, 1000, 15000, 10),
+                                new ChronosProperties.Scheduler(true, 1000)));
     }
 
     @Test

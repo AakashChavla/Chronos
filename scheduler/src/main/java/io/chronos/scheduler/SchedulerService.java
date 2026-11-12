@@ -15,10 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@ConditionalOnProperty(
-        name = "chronos.scheduler-enabled",
-        havingValue = "true",
-        matchIfMissing = true)
+@ConditionalOnProperty(name = "chronos.scheduler.enabled", havingValue = "true")
 public class SchedulerService {
     private final JdbcTemplate jdbc;
     private final RunTransitionService transitions;
@@ -29,7 +26,7 @@ public class SchedulerService {
     }
 
     @Transactional
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelayString = "${chronos.scheduler.poll-interval-ms:1000}")
     public void tick() {
         if (!Boolean.TRUE.equals(
                 jdbc.queryForObject("select pg_try_advisory_xact_lock(987654321)", Boolean.class)))
